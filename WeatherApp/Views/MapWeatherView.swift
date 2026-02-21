@@ -93,7 +93,7 @@ struct MapWeatherView: View {
         case .wind:
             return v < 20 ? .green : v < 50 ? .yellow : .red
         case .cloudCover:
-            return v < 25 ? .yellow : v < 75 ? .gray : .primary
+            return v < 25 ? .yellow : v < 75 ? .gray : .init(white: 0.35)
         }
     }
 }
