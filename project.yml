@@ -27,3 +27,11 @@ targets:
       - target: WeatherApp
     settings:
       SWIFT_VERSION: 6.0
+schemes:
+  WeatherApp:
+    build:
+      targets:
+        WeatherApp: all
+    test:
+      targets:
+        - WeatherAppTests
