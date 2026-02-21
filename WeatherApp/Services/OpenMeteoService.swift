@@ -24,9 +24,9 @@ struct OpenMeteoResponse: Decodable {
             case time
             case temperature2m    = "temperature_2m"
             case precipitation
-            case windspeed10m     = "windspeed_10m"
-            case winddirection10m = "winddirection_10m"
-            case cloudcover
+            case windspeed10m     = "wind_speed_10m"
+            case winddirection10m = "wind_direction_10m"
+            case cloudcover       = "cloud_cover"
         }
     }
 
@@ -63,10 +63,10 @@ actor OpenMeteoService {
         components.queryItems = [
             URLQueryItem(name: "latitude",      value: String(location.latitude)),
             URLQueryItem(name: "longitude",     value: String(location.longitude)),
-            URLQueryItem(name: "hourly",        value: "temperature_2m,precipitation,windspeed_10m,winddirection_10m,cloudcover"),
+            URLQueryItem(name: "hourly",        value: "temperature_2m,precipitation,wind_speed_10m,wind_direction_10m,cloud_cover"),
             URLQueryItem(name: "models",        value: model.rawValue),
             URLQueryItem(name: "forecast_days", value: "7"),
-            URLQueryItem(name: "timezone",      value: "auto"),
+            URLQueryItem(name: "timezone",      value: "UTC"),
         ]
         guard let url = components.url else { throw WeatherError.invalidURL }
 

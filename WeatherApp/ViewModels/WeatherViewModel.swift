@@ -17,11 +17,11 @@ final class WeatherViewModel {
     func loadAll(for location: Location) async {
         isLoading = true
         error = nil
+        defer { isLoading = false }
         async let obs = fetchObservation(for: location)
         async let fc  = fetchAllForecasts(for: location)
         self.observation = await obs
         self.forecasts   = await fc
-        isLoading = false
         if forecasts.isEmpty && observation == nil {
             error = "Wetterdaten konnten nicht geladen werden. Netzwerkverbindung prüfen."
         }

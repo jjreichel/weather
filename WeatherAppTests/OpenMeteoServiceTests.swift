@@ -11,9 +11,9 @@ import Foundation
         "time": ["2024-01-01T00:00", "2024-01-01T01:00"],
         "temperature_2m": [5.1, 4.9],
         "precipitation": [0.0, 0.1],
-        "windspeed_10m": [12.3, 11.5],
-        "winddirection_10m": [180.0, 175.0],
-        "cloudcover": [75.0, 80.0]
+        "wind_speed_10m": [12.3, 11.5],
+        "wind_direction_10m": [180.0, 175.0],
+        "cloud_cover": [75.0, 80.0]
       }
     }
     """.data(using: .utf8)!
@@ -33,9 +33,9 @@ import Foundation
         "time": ["2024-01-01T00:00"],
         "temperature_2m": [5.1],
         "precipitation": [0.0],
-        "windspeed_10m": [12.3],
-        "winddirection_10m": [180.0],
-        "cloudcover": [75.0]
+        "wind_speed_10m": [12.3],
+        "wind_direction_10m": [180.0],
+        "cloud_cover": [75.0]
       }
     }
     """.data(using: .utf8)!

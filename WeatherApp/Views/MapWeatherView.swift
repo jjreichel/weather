@@ -9,7 +9,7 @@ struct WeatherDataPoint: Identifiable {
 }
 
 struct MapWeatherView: View {
-    var weatherVM: WeatherViewModel
+    @Bindable var weatherVM: WeatherViewModel
     var locationVM: LocationViewModel
 
     @State private var position: MapCameraPosition = .automatic
