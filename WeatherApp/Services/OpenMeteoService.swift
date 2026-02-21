@@ -4,6 +4,14 @@ import Foundation
 struct OpenMeteoResponse: Decodable {
     let hourly: HourlyData
 
+    private static let hourlyFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd'T'HH:mm"
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = TimeZone(secondsFromGMT: 0)
+        return f
+    }()
+
     struct HourlyData: Decodable {
         let time: [String]
         let temperature2m: [Double?]
@@ -23,20 +31,15 @@ struct OpenMeteoResponse: Decodable {
     }
 
     func toForecast(location: Location, model: WeatherModel) -> WeatherForecast {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd'T'HH:mm"
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = TimeZone(secondsFromGMT: 0)
-
         let entries: [WeatherForecast.HourlyEntry] = hourly.time.enumerated().compactMap { (i, str) in
-            guard let date = formatter.date(from: str) else { return nil }
+            guard let date = OpenMeteoResponse.hourlyFormatter.date(from: str) else { return nil }
             return WeatherForecast.HourlyEntry(
                 time: date,
-                temperature: hourly.temperature2m[safe: i] ?? nil,
-                precipitation: hourly.precipitation[safe: i] ?? nil,
-                windSpeed: hourly.windspeed10m[safe: i] ?? nil,
-                windDirection: hourly.winddirection10m[safe: i] ?? nil,
-                cloudCover: hourly.cloudcover[safe: i] ?? nil
+                temperature: hourly.temperature2m[safe: i].flatMap { $0 },
+                precipitation: hourly.precipitation[safe: i].flatMap { $0 },
+                windSpeed: hourly.windspeed10m[safe: i].flatMap { $0 },
+                windDirection: hourly.winddirection10m[safe: i].flatMap { $0 },
+                cloudCover: hourly.cloudcover[safe: i].flatMap { $0 }
             )
         }
         return WeatherForecast(location: location, model: model, hourly: entries)
@@ -47,10 +50,12 @@ actor OpenMeteoService {
     private let baseURL = URL(string: "https://api.open-meteo.com/v1/forecast")!
     private let session: URLSession
 
-    init(session: URLSession = .shared) {
+    init(session: URLSession = {
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 15
-        self.session = URLSession(configuration: config)
+        return URLSession(configuration: config)
+    }()) {
+        self.session = session
     }
 
     func fetchForecast(for location: Location, model: WeatherModel) async throws -> WeatherForecast {
