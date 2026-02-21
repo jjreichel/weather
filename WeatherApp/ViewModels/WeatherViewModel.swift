@@ -5,7 +5,7 @@ import Observation
 @Observable
 final class WeatherViewModel {
     var forecasts: [WeatherModel: WeatherForecast] = [:]
-    var observation: Observation?
+    var observation: StationObservation?
     var selectedModel: WeatherModel = .icon
     var selectedLayer: WeatherLayer = .temperature
     var isLoading = false
@@ -31,7 +31,7 @@ final class WeatherViewModel {
         forecasts[selectedModel]
     }
 
-    private func fetchObservation(for location: Location) async -> Observation? {
+    private func fetchObservation(for location: Location) async -> StationObservation? {
         try? await brightSky.fetchCurrentObservation(for: location)
     }
 

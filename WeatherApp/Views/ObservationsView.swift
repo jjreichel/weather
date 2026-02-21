@@ -22,7 +22,7 @@ struct ObservationsView: View {
 }
 
 struct ObservationDetailView: View {
-    let observation: Observation
+    let observation: StationObservation
 
     private static let timeFormatter: DateFormatter = {
         let f = DateFormatter()

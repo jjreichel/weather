@@ -25,11 +25,11 @@ struct BrightSkyCurrentResponse: Decodable {
             case icon
         }
 
-        private static let iso8601Formatter: ISO8601DateFormatter = ISO8601DateFormatter()
+        nonisolated(unsafe) private static let iso8601Formatter: ISO8601DateFormatter = ISO8601DateFormatter()
 
-        func toObservation(stationName: String) -> Observation {
+        func toObservation(stationName: String) -> StationObservation {
             let time = BrightSkyWeather.iso8601Formatter.date(from: timestamp) ?? Date()
-            return Observation(
+            return StationObservation(
                 stationName: stationName,
                 time: time,
                 temperature: temperature,
@@ -64,7 +64,7 @@ actor BrightSkyService {
         self.session = session
     }
 
-    func fetchCurrentObservation(for location: Location) async throws -> Observation {
+    func fetchCurrentObservation(for location: Location) async throws -> StationObservation {
         var components = URLComponents(
             url: baseURL.appendingPathComponent("current_weather"),
             resolvingAgainstBaseURL: false

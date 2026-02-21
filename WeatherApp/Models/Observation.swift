@@ -1,6 +1,6 @@
 import Foundation
 
-struct Observation: Equatable, Sendable {
+struct StationObservation: Equatable, Sendable {
     let stationName: String
     let time: Date
     let temperature: Double?    // °C
