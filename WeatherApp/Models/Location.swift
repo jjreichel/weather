@@ -2,10 +2,10 @@ import Foundation
 import CoreLocation
 
 struct Location: Identifiable, Codable, Equatable, Sendable {
-    var id: UUID
-    var name: String
-    var latitude: Double
-    var longitude: Double
+    let id: UUID
+    let name: String
+    let latitude: Double
+    let longitude: Double
     var isFavorite: Bool
 
     var coordinate: CLLocationCoordinate2D {
