@@ -22,6 +22,9 @@ final class WeatherViewModel {
         self.observation = await obs
         self.forecasts   = await fc
         isLoading = false
+        if forecasts.isEmpty && observation == nil {
+            error = "Wetterdaten konnten nicht geladen werden. Netzwerkverbindung prüfen."
+        }
     }
 
     var currentForecast: WeatherForecast? {
