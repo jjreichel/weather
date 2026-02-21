@@ -3,6 +3,7 @@ import SwiftUI
 struct LocationSearchView: View {
     @Bindable var locationVM: LocationViewModel
     @Environment(\.dismiss) private var dismiss
+    @State private var searchTask: Task<Void, Never>?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -23,7 +24,8 @@ struct LocationSearchView: View {
                 TextField("Stadt oder Ort suchen…", text: $locationVM.searchText)
                     .textFieldStyle(.plain)
                     .onChange(of: locationVM.searchText) { _, query in
-                        Task { await locationVM.search(query: query) }
+                        searchTask?.cancel()
+                        searchTask = Task { await locationVM.search(query: query) }
                     }
                 if locationVM.isSearching {
                     ProgressView().scaleEffect(0.7)
@@ -69,7 +71,7 @@ struct LocationSearchView: View {
                                 locationVM.selectedLocation = loc
                                 dismiss()
                             }
-                            .swipeActions {
+                            .contextMenu {
                                 Button(role: .destructive) {
                                     locationVM.removeFavorite(loc)
                                 } label: {

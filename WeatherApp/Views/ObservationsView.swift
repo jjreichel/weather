@@ -24,12 +24,16 @@ struct ObservationsView: View {
 struct ObservationDetailView: View {
     let observation: Observation
 
-    private var timeString: String {
+    private static let timeFormatter: DateFormatter = {
         let f = DateFormatter()
         f.dateStyle = .medium
         f.timeStyle = .short
         f.locale = Locale(identifier: "de_DE")
-        return f.string(from: observation.time)
+        return f
+    }()
+
+    private var timeString: String {
+        Self.timeFormatter.string(from: observation.time)
     }
 
     var body: some View {
