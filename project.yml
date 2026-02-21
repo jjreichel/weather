@@ -1,0 +1,29 @@
+name: WeatherApp
+options:
+  bundleIdPrefix: com.jjreichel
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+targets:
+  WeatherApp:
+    type: application
+    platform: macOS
+    sources:
+      - WeatherApp
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: com.jjreichel.WeatherApp
+      SWIFT_VERSION: 6.0
+      MARKETING_VERSION: 1.0
+      CURRENT_PROJECT_VERSION: 1
+      INFOPLIST_FILE: WeatherApp/Info.plist
+      CODE_SIGN_ENTITLEMENTS: WeatherApp/WeatherApp.entitlements
+      ENABLE_HARDENED_RUNTIME: YES
+  WeatherAppTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - WeatherAppTests
+    dependencies:
+      - target: WeatherApp
+    settings:
+      SWIFT_VERSION: 6.0
