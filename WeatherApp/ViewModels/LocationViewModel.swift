@@ -43,6 +43,7 @@ final class LocationViewModel: NSObject {
             }
         } catch {
             searchResults = []
+            locationError = error.localizedDescription
         }
     }
 
