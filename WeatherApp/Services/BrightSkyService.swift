@@ -25,9 +25,10 @@ struct BrightSkyCurrentResponse: Decodable {
             case icon
         }
 
+        private static let iso8601Formatter: ISO8601DateFormatter = ISO8601DateFormatter()
+
         func toObservation(stationName: String) -> Observation {
-            let formatter = ISO8601DateFormatter()
-            let time = formatter.date(from: timestamp) ?? Date()
+            let time = BrightSkyWeather.iso8601Formatter.date(from: timestamp) ?? Date()
             return Observation(
                 stationName: stationName,
                 time: time,
