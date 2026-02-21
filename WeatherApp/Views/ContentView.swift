@@ -24,28 +24,27 @@ struct ContentView: View {
 
     var body: some View {
         NavigationSplitView {
-            List(SidebarItem.allCases, selection: $selectedItem) { item in
-                Label(item.rawValue, systemImage: item.icon)
-                    .tag(item)
+            List(selection: $selectedItem) {
+                ForEach(SidebarItem.allCases) { item in
+                    Label(item.rawValue, systemImage: item.icon)
+                        .tag(item as SidebarItem?)
+                }
+                if !locationVM.favorites.isEmpty {
+                    Section("Favoriten") {
+                        ForEach(locationVM.favorites) { loc in
+                            Button(loc.name) {
+                                locationVM.selectedLocation = loc
+                            }
+                            .buttonStyle(.plain)
+                            .foregroundStyle(
+                                locationVM.selectedLocation?.id == loc.id ? Color.accentColor : .primary
+                            )
+                        }
+                    }
+                }
             }
             .listStyle(.sidebar)
             .navigationSplitViewColumnWidth(min: 160, ideal: 180)
-
-            if !locationVM.favorites.isEmpty {
-                Divider()
-                Section("Favoriten") {
-                    ForEach(locationVM.favorites) { loc in
-                        Button(loc.name) {
-                            locationVM.selectedLocation = loc
-                        }
-                        .buttonStyle(.plain)
-                        .foregroundStyle(
-                            locationVM.selectedLocation?.id == loc.id ? Color.accentColor : .primary
-                        )
-                    }
-                }
-                .padding(.horizontal)
-            }
         } detail: {
             VStack(spacing: 0) {
                 if let error = weatherVM.error {
