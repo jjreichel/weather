@@ -108,7 +108,7 @@ struct LayerPickerView: View {
                     selectedLayer = layer
                 }
                 .buttonStyle(.borderedProminent)
-                .tint(selectedLayer == layer ? .accentColor : .secondary.opacity(0.6))
+                .tint(selectedLayer == layer ? Color.accentColor : .secondary.opacity(0.6))
                 .controlSize(.small)
             }
         }
