@@ -78,10 +78,3 @@ actor OpenMeteoService {
         return raw.toForecast(location: location, model: model)
     }
 }
-
-// Hilfserweiterung für sicheren Array-Zugriff
-extension Array {
-    subscript(safe index: Int) -> Element? {
-        indices.contains(index) ? self[index] : nil
-    }
-}

@@ -27,6 +27,7 @@ targets:
       - target: WeatherApp
     settings:
       SWIFT_VERSION: 6.0
+      GENERATE_INFOPLIST_FILE: YES
 schemes:
   WeatherApp:
     build:

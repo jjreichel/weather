@@ -67,6 +67,8 @@ struct MapWeatherView: View {
             case .cloudCover:
                 let v = entry.cloudCover
                 return (v, v.map { "\(Int($0.rounded()))%" } ?? "—")
+            case .wave, .cape:
+                return (nil, "—")
             }
         }()
 
@@ -94,6 +96,10 @@ struct MapWeatherView: View {
             return v < 20 ? .green : v < 50 ? .yellow : .red
         case .cloudCover:
             return v < 25 ? .yellow : v < 75 ? .gray : .init(white: 0.35)
+        case .wave:
+            return v < 1 ? .cyan : v < 3 ? .blue : .indigo
+        case .cape:
+            return v < 500 ? .green : v < 1500 ? .yellow : .red
         }
     }
 }
