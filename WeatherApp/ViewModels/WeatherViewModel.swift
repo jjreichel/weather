@@ -32,12 +32,27 @@ final class WeatherViewModel {
         forecasts[selectedModel]
     }
 
-    // MARK: - Grid-Daten (Task 6)
-    var currentGrid: WeatherGrid? = nil
-    var selectedHourIndex: Int = 0
+    // MARK: - Grid-Daten
 
-    /// Lädt das Wetterdaten-Raster für die angezeigte Kartenregion (Stub — Task 6).
-    func loadGrid(for region: MKCoordinateRegion) async {}
+    var currentGrid: WeatherGrid?
+    var selectedHourIndex: Int = 0
+    var isLoadingGrid = false
+
+    private let gridService = GridFetchService()
+    private var gridTask: Task<Void, Never>?
+
+    func loadGrid(for mapRegion: MKCoordinateRegion) async {
+        gridTask?.cancel()
+        let region = GridRegion(from: mapRegion)
+        isLoadingGrid = true
+        gridTask = Task {
+            let grid = try? await gridService.fetchGrid(region: region, model: selectedModel)
+            guard !Task.isCancelled else { return }
+            self.currentGrid = grid
+            self.isLoadingGrid = false
+        }
+        await gridTask?.value
+    }
 
     private func fetchObservation(for location: Location) async -> StationObservation? {
         try? await brightSky.fetchCurrentObservation(for: location)
