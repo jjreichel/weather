@@ -30,11 +30,13 @@ final class GribOverlayRenderer: MKOverlayRenderer {
     var gridOverlay: GribMapOverlay { overlay as! GribMapOverlay }
 
     override func draw(_ mapRect: MKMapRect, zoomScale: MKZoomScale, in ctx: CGContext) {
-        guard let grid = gridOverlay.grid,
-              let values = grid.data[gridOverlay.selectedLayer]?[safe: gridOverlay.selectedHourIndex]
+        // Snapshot: MapKit ruft draw auf einem Render-Thread auf; alle Properties einmalig lesen
+        let go = gridOverlay
+        let layer = go.selectedLayer
+        let hourIndex = go.selectedHourIndex
+        guard let grid = go.grid,
+              let values = grid.data[layer]?[safe: hourIndex]
         else { return }
-
-        let layer = gridOverlay.selectedLayer
         let nx = grid.region.nx
         let ny = grid.region.ny
 
@@ -57,7 +59,7 @@ final class GribOverlayRenderer: MKOverlayRenderer {
               let cgImage = CGImage(width: nx, height: ny,
                                     bitsPerComponent: 8, bitsPerPixel: 32,
                                     bytesPerRow: nx * 4, space: colorSpace,
-                                    bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
+                                    bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.last.rawValue),
                                     provider: provider, decode: nil,
                                     shouldInterpolate: true,
                                     intent: .defaultIntent)
@@ -98,7 +100,7 @@ final class GribOverlayRenderer: MKOverlayRenderer {
         case .cloudCover:
             let t = max(0, min(1, v / 100))
             let c = UInt8(200 - Int(t * 150))
-            return (c, c, UInt8(max(0, Int(c) - 50)), 180)
+            return (c, c, UInt8(max(0, Int(c) - 50)), 200)
         case .wave:
             let t = max(0, min(1, v / 10))
             return gradient(t, stops: [
