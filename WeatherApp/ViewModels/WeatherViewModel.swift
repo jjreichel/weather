@@ -41,17 +41,20 @@ final class WeatherViewModel {
     private let gridService = GridFetchService()
     private var gridTask: Task<Void, Never>?
 
-    func loadGrid(for mapRegion: MKCoordinateRegion) async {
+    func loadGrid(for mapRegion: MKCoordinateRegion) {
         gridTask?.cancel()
         let region = GridRegion(from: mapRegion)
+        let model  = selectedModel          // Snapshot: Modell zum Aufrufzeitpunkt erfassen
         isLoadingGrid = true
         gridTask = Task {
-            let grid = try? await gridService.fetchGrid(region: region, model: selectedModel)
-            guard !Task.isCancelled else { return }
+            let grid = try? await gridService.fetchGrid(region: region, model: model)
+            guard !Task.isCancelled else {
+                self.isLoadingGrid = false   // Lade-Indikator auch bei Abbruch zurücksetzen
+                return
+            }
             self.currentGrid = grid
             self.isLoadingGrid = false
         }
-        await gridTask?.value
     }
 
     private func fetchObservation(for location: Location) async -> StationObservation? {

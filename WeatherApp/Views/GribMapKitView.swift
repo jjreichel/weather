@@ -77,7 +77,7 @@ struct GribMapKitView: NSViewRepresentable {
             debounceTask = Task { @MainActor in
                 try? await Task.sleep(for: .seconds(0.8))
                 guard !Task.isCancelled else { return }
-                await self.weatherVM.loadGrid(for: region)
+                self.weatherVM.loadGrid(for: region)
             }
         }
 
