@@ -77,7 +77,8 @@ struct TimeSliderView: View {
     }()
 
     var body: some View {
-        VStack(spacing: 2) {
+        guard !times.isEmpty else { return AnyView(EmptyView()) }
+        return AnyView(VStack(spacing: 2) {
             Text(TimeSliderView.fmt.string(from: times[selectedIndex]) + " UTC")
                 .font(.caption.monospacedDigit())
                 .foregroundStyle(.secondary)
@@ -86,7 +87,7 @@ struct TimeSliderView: View {
                 get: { Double(selectedIndex) },
                 set: { selectedIndex = Int($0.rounded()) }
             ), in: 0...Double(times.count - 1), step: 1)
-        }
+        })
     }
 }
 
