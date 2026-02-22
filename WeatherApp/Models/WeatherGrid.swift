@@ -1,5 +1,4 @@
 import Foundation
-import MapKit
 
 /// Sendable Bounding-Box eines regulären lat/lon-Rasters.
 /// ix=0 ist Westen, iy=0 ist Süden.
@@ -20,7 +19,12 @@ struct GridRegion: Sendable, Equatable {
     func longitude(ix: Int) -> Double { lonMin + Double(ix) * lonStep }
 
     /// Punkt-Index: Zeilen-Major, Süd→Nord
-    func index(ix: Int, iy: Int) -> Int { iy * nx + ix }
+    /// - Precondition: 0 ≤ ix < nx, 0 ≤ iy < ny
+    func index(ix: Int, iy: Int) -> Int {
+        precondition(ix >= 0 && ix < nx && iy >= 0 && iy < ny,
+                     "GridRegion.index: Index außerhalb des Rasters (\(ix),\(iy)) bei nx=\(nx),ny=\(ny)")
+        return iy * nx + ix
+    }
 
     /// Alle (ix, iy)-Paare
     var allIndices: [(ix: Int, iy: Int)] {
@@ -37,20 +41,7 @@ struct GridRegion: Sendable, Equatable {
         }
     }
 
-    init(from region: MKCoordinateRegion) {
-        let step = GridRegion.step(for: region.span.latitudeDelta)
-        let lat0 = region.center.latitude  - region.span.latitudeDelta  / 2
-        let lat1 = region.center.latitude  + region.span.latitudeDelta  / 2
-        let lon0 = region.center.longitude - region.span.longitudeDelta / 2
-        let lon1 = region.center.longitude + region.span.longitudeDelta / 2
-        latMin = (lat0 / step).rounded(.down) * step
-        latMax = (lat1 / step).rounded(.up)   * step
-        lonMin = (lon0 / step).rounded(.down) * step
-        lonMax = (lon1 / step).rounded(.up)   * step
-        nx = max(2, Int((lonMax - lonMin) / step) + 1)
-        ny = max(2, Int((latMax - latMin) / step) + 1)
-    }
-
+    /// Direkt-Initializer. nx und ny müssen ≥ 2 sein (andernfalls ist latStep/lonStep undefiniert).
     init(latMin: Double, latMax: Double, lonMin: Double, lonMax: Double, nx: Int, ny: Int) {
         self.latMin = latMin; self.latMax = latMax
         self.lonMin = lonMin; self.lonMax = lonMax
