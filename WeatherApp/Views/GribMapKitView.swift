@@ -19,19 +19,22 @@ struct GribMapKitView: NSViewRepresentable {
     func updateNSView(_ mv: MKMapView, context: Context) {
         let coord = context.coordinator
 
-        // Ort-Annotation aktualisieren
-        mv.removeAnnotations(mv.annotations)
+        // Ort-Annotation separat verwalten (nicht windAnnotations berühren)
+        if let old = coord.locationPin { mv.removeAnnotation(old) }
         if let loc = locationVM.selectedLocation {
             let pin = MKPointAnnotation()
             pin.coordinate = loc.coordinate
             pin.title = loc.name
             mv.addAnnotation(pin)
+            coord.locationPin = pin
             if coord.lastCenteredLocation?.id != loc.id {
                 coord.lastCenteredLocation = loc
                 let region = MKCoordinateRegion(center: loc.coordinate,
                                                 span: MKCoordinateSpan(latitudeDelta: 6, longitudeDelta: 6))
                 mv.setRegion(region, animated: true)
             }
+        } else {
+            coord.locationPin = nil
         }
 
         // Overlay-Properties aktualisieren
@@ -61,6 +64,7 @@ struct GribMapKitView: NSViewRepresentable {
         var lastCenteredLocation: Location?
         private var debounceTask: Task<Void, Never>?
         private var windAnnotations: [MKAnnotation] = []
+        var locationPin: MKPointAnnotation?
 
         init(weatherVM: WeatherViewModel, locationVM: LocationViewModel) {
             self.weatherVM = weatherVM
