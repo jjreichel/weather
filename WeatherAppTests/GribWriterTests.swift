@@ -65,7 +65,7 @@ private func makeTestGrid() -> WeatherGrid {
     // Sec5 beginnt bei 37+72 (Sec3) + 34 (Sec4) = 143
     let sec5Start = 37 + 72 + 34
     #expect(data[sec5Start + 4] == 0x05)
-    #expect(data[sec5Start + 20] == 16)
+    #expect(data[sec5Start + 19] == 16) // Offset 19 = WMO-Oktet 20 (0-indiziert): Bits pro Wert
 }
 
 @Test func gribWriterMessageLengthConsistency() throws {

@@ -161,7 +161,7 @@ enum GribWriter {
         s += u32be(region.nx)
         s += u32be(region.ny)
         s += u32be(0)            // Basic angle
-        s += u32be(0xFFFFFFFF)   // Subdivisions (missing)
+        s += u32be(UInt32.max)   // Subdivisions (missing) = 0xFFFFFFFF
 
         s += i32be(Int32(region.latMin * 1_000_000))
         s += u32be(UInt32(bitPattern: Int32(region.lonMin * 1_000_000)))
