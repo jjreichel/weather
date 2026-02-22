@@ -1,108 +1,96 @@
 import SwiftUI
 import MapKit
+import AppKit
+import UniformTypeIdentifiers
 
-struct WeatherDataPoint: Identifiable {
-    let id = UUID()
-    let coordinate: CLLocationCoordinate2D
-    let color: Color
-    let label: String
+// UTI für GRIB2 (nur definieren wenn noch nicht vorhanden)
+private extension UTType {
+    static let grib2 = UTType(filenameExtension: "grib2") ?? .data
 }
 
 struct MapWeatherView: View {
     @Bindable var weatherVM: WeatherViewModel
     var locationVM: LocationViewModel
 
-    @State private var position: MapCameraPosition = .automatic
-
     var body: some View {
-        ZStack(alignment: .topTrailing) {
-            Map(position: $position) {
-                if let loc = locationVM.selectedLocation {
-                    Marker(loc.name, coordinate: loc.coordinate)
-                }
-                ForEach(dataPoints) { point in
-                    Annotation("", coordinate: point.coordinate) {
-                        ZStack {
-                            Circle()
-                                .fill(point.color.opacity(0.75))
-                                .frame(width: 44, height: 44)
-                            Text(point.label)
-                                .font(.system(size: 10, weight: .semibold))
-                                .foregroundStyle(.white)
-                        }
-                    }
+        ZStack(alignment: .bottom) {
+            // Karte mit Overlay-Rendering via MKMapView
+            GribMapKitView(weatherVM: weatherVM, locationVM: locationVM)
+                .ignoresSafeArea()
+
+            // Zeitslider am unteren Rand
+            if let grid = weatherVM.currentGrid, grid.times.count > 1 {
+                TimeSliderView(times: grid.times,
+                               selectedIndex: $weatherVM.selectedHourIndex)
+                    .padding(.horizontal)
+                    .padding(.vertical, 8)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+                    .padding(10)
+            }
+        }
+        .overlay(alignment: .topTrailing) {
+            VStack(alignment: .trailing, spacing: 8) {
+                LayerPickerView(selectedLayer: $weatherVM.selectedLayer)
+                if weatherVM.isLoadingGrid {
+                    ProgressView().scaleEffect(0.7)
                 }
             }
-
-            LayerPickerView(selectedLayer: $weatherVM.selectedLayer)
-                .padding()
+            .padding()
         }
-        .onChange(of: locationVM.selectedLocation) { _, loc in
-            guard let loc else { return }
-            withAnimation {
-                position = .region(MKCoordinateRegion(
-                    center: loc.coordinate,
-                    span: MKCoordinateSpan(latitudeDelta: 3, longitudeDelta: 3)
-                ))
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    downloadGrib()
+                } label: {
+                    Label("Als GRIB2 speichern…", systemImage: "arrow.down.doc")
+                }
+                .disabled(weatherVM.currentGrid == nil)
             }
         }
     }
 
-    // In v1: ein Datenpunkt am gewählten Ort für die aktuelle Stunde
-    var dataPoints: [WeatherDataPoint] {
-        guard let forecast = weatherVM.currentForecast,
-              let entry = forecast.hourly.first else { return [] }
-
-        let (value, label): (Double?, String) = {
-            switch weatherVM.selectedLayer {
-            case .temperature:
-                let v = entry.temperature
-                return (v, v.map { "\(Int($0.rounded()))°C" } ?? "—")
-            case .precipitation:
-                let v = entry.precipitation
-                return (v, v.map { "\(String(format: "%.1f", $0)) mm" } ?? "—")
-            case .wind:
-                let v = entry.windSpeed
-                return (v, v.map { "\(Int($0.rounded())) km/h" } ?? "—")
-            case .cloudCover:
-                let v = entry.cloudCover
-                return (v, v.map { "\(Int($0.rounded()))%" } ?? "—")
-            case .wave, .cape:
-                return (nil, "—")
-            }
-        }()
-
-        return [WeatherDataPoint(
-            coordinate: forecast.location.coordinate,
-            color: colorFor(value: value, layer: weatherVM.selectedLayer),
-            label: label
-        )]
-    }
-
-    func colorFor(value: Double?, layer: WeatherLayer) -> Color {
-        guard let v = value else { return .gray }
-        switch layer {
-        case .temperature:
-            switch v {
-            case ..<0:    return .blue
-            case 0..<10:  return .cyan
-            case 10..<20: return .green
-            case 20..<30: return .orange
-            default:      return .red
-            }
-        case .precipitation:
-            return v < 0.1 ? .gray : v < 2 ? .blue : .indigo
-        case .wind:
-            return v < 20 ? .green : v < 50 ? .yellow : .red
-        case .cloudCover:
-            return v < 25 ? .yellow : v < 75 ? .gray : .init(white: 0.35)
-        case .wave:
-            return v < 1 ? .cyan : v < 3 ? .blue : .indigo
-        case .cape:
-            return v < 500 ? .green : v < 1500 ? .yellow : .red
+    private func downloadGrib() {
+        guard let grid = weatherVM.currentGrid else { return }
+        let panel = NSSavePanel()
+        panel.title = "GRIB2-Raster speichern"
+        panel.allowedContentTypes = [.grib2]
+        panel.nameFieldStringValue = "Wettermodell-\(grid.model.displayName).grib2"
+        panel.begin { response in
+            guard response == .OK, let url = panel.url else { return }
+            try? GribWriter.write(grid: grid, to: url)
         }
     }
 }
+
+// MARK: - TimeSliderView
+
+struct TimeSliderView: View {
+    let times: [Date]
+    @Binding var selectedIndex: Int
+
+    private static let fmt: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "E dd. MMM HH:mm"
+        f.locale = Locale(identifier: "de_DE")
+        f.timeZone = TimeZone(secondsFromGMT: 0)
+        return f
+    }()
+
+    var body: some View {
+        VStack(spacing: 2) {
+            Text(TimeSliderView.fmt.string(from: times[selectedIndex]) + " UTC")
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(.secondary)
+
+            Slider(value: Binding(
+                get: { Double(selectedIndex) },
+                set: { selectedIndex = Int($0.rounded()) }
+            ), in: 0...Double(times.count - 1), step: 1)
+        }
+    }
+}
+
+// MARK: - LayerPickerView
 
 struct LayerPickerView: View {
     @Binding var selectedLayer: WeatherLayer
