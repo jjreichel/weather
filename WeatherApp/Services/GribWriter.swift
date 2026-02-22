@@ -243,7 +243,7 @@ enum GribWriter {
     private static func u32be(_ v: UInt32) -> [UInt8] {
         [UInt8(v>>24), UInt8((v>>16)&0xFF), UInt8((v>>8)&0xFF), UInt8(v&0xFF)]
     }
-    private static func u32be(_ v: Int)   -> [UInt8] { u32be(UInt32(bitPattern: Int32(v))) }
+    private static func u32be(_ v: Int)   -> [UInt8] { u32be(UInt32(v)) }
     private static func u32be(_ v: UInt)  -> [UInt8] { u32be(UInt32(v)) }
     private static func i32be(_ v: Int32) -> [UInt8] { u32be(UInt32(bitPattern: v)) }
 }
