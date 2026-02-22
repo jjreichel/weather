@@ -43,6 +43,7 @@ struct GridRegion: Sendable, Equatable {
 
     /// Direkt-Initializer. nx und ny müssen ≥ 2 sein (andernfalls ist latStep/lonStep undefiniert).
     init(latMin: Double, latMax: Double, lonMin: Double, lonMax: Double, nx: Int, ny: Int) {
+        precondition(nx >= 2 && ny >= 2, "GridRegion: nx und ny müssen ≥ 2 sein (nx=\(nx), ny=\(ny))")
         self.latMin = latMin; self.latMax = latMax
         self.lonMin = lonMin; self.lonMax = lonMax
         self.nx = nx; self.ny = ny
