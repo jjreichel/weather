@@ -1,4 +1,5 @@
 import Foundation
+import MapKit
 import Observation
 
 @MainActor
@@ -30,6 +31,13 @@ final class WeatherViewModel {
     var currentForecast: WeatherForecast? {
         forecasts[selectedModel]
     }
+
+    // MARK: - Grid-Daten (Task 6)
+    var currentGrid: WeatherGrid? = nil
+    var selectedHourIndex: Int = 0
+
+    /// Lädt das Wetterdaten-Raster für die angezeigte Kartenregion (Stub — Task 6).
+    func loadGrid(for region: MKCoordinateRegion) async {}
 
     private func fetchObservation(for location: Location) async -> StationObservation? {
         try? await brightSky.fetchCurrentObservation(for: location)
