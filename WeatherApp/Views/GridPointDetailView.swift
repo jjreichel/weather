@@ -5,6 +5,7 @@ struct GridPointDetailView: View {
     let grid: WeatherGrid
     let inspection: GridInspection
     let hourIndex: Int
+    var windSpeedUnit: WindSpeedUnit = .kmh
     var onClose: () -> Void
 
     private static let timeFormatter: DateFormatter = {
@@ -51,10 +52,10 @@ struct GridPointDetailView: View {
                         if layer == .wind,
                            let dir = grid.windDirection(at: inspection.ix, iy: inspection.iy,
                                                         hourIndex: hourIndex) {
-                            Text("\(layer.format(value)) · \(Int(dir))°")
+                            Text("\(layer.format(value, windSpeedUnit: windSpeedUnit)) · \(Int(dir))°")
                                 .font(.caption.monospacedDigit())
                         } else {
-                            Text(layer.format(value))
+                            Text(layer.format(value, windSpeedUnit: windSpeedUnit))
                                 .font(.caption.monospacedDigit())
                         }
                     }

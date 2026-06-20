@@ -18,7 +18,8 @@ struct MapWeatherView: View {
                 .ignoresSafeArea()
 
             HStack(alignment: .bottom, spacing: 10) {
-                LayerLegendView(layer: weatherVM.selectedLayer)
+                LayerLegendView(layer: weatherVM.selectedLayer,
+                                windSpeedUnit: weatherVM.windSpeedUnit)
 
                 Spacer()
 
@@ -28,7 +29,8 @@ struct MapWeatherView: View {
                         GridPointDetailView(
                             grid: grid,
                             inspection: inspection,
-                            hourIndex: weatherVM.selectedHourIndex
+                            hourIndex: weatherVM.selectedHourIndex,
+                            windSpeedUnit: weatherVM.windSpeedUnit
                         ) {
                             weatherVM.clearGridInspection()
                         }
@@ -49,11 +51,27 @@ struct MapWeatherView: View {
         .overlay(alignment: .topTrailing) {
             VStack(alignment: .trailing, spacing: 8) {
                 LayerPickerView(selectedLayer: $weatherVM.selectedLayer)
-                if weatherVM.isLoadingGrid {
-                    ProgressView().scaleEffect(0.7)
+                if let progress = weatherVM.gridLoadProgress, weatherVM.isLoadingGrid {
+                    ProgressOverlayView(
+                        title: "Raster laden…",
+                        completed: progress.completed,
+                        total: progress.total
+                    )
                 }
             }
             .padding()
+        }
+        .overlay {
+            if weatherVM.isExportingGrib, let progress = weatherVM.gribExportProgress {
+                ZStack {
+                    Color.black.opacity(0.2).ignoresSafeArea()
+                    ProgressOverlayView(
+                        title: "GRIB2 speichern…",
+                        completed: progress.completed,
+                        total: progress.total
+                    )
+                }
+            }
         }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
@@ -62,7 +80,7 @@ struct MapWeatherView: View {
                 } label: {
                     Label("Als GRIB2 speichern…", systemImage: "arrow.down.doc")
                 }
-                .disabled(weatherVM.currentGrid == nil)
+                .disabled(weatherVM.currentGrid == nil || weatherVM.isExportingGrib)
             }
         }
     }
@@ -75,10 +93,12 @@ struct MapWeatherView: View {
         panel.nameFieldStringValue = "Wettermodell-\(grid.model.displayName).grib2"
         panel.begin { response in
             guard response == .OK, let url = panel.url else { return }
-            do {
-                try GribWriter.write(grid: grid, to: url)
-            } catch {
-                NSAlert(error: error).runModal()
+            Task {
+                do {
+                    try await weatherVM.exportGrib(grid: grid, to: url)
+                } catch {
+                    NSAlert(error: error).runModal()
+                }
             }
         }
     }

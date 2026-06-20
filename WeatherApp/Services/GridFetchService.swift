@@ -63,11 +63,16 @@ actor GridFetchService {
         return URLSession(configuration: c)
     }()) { self.session = session }
 
-    func fetchGrid(region: GridRegion, model: WeatherModel) async throws -> WeatherGrid {
+    func fetchGrid(
+        region: GridRegion,
+        model: WeatherModel,
+        onProgress: @Sendable (Int, Int) -> Void = { _, _ in }
+    ) async throws -> WeatherGrid {
         let points = region.allIndices
-        let nTotal = region.nx * region.ny
+        let nTotal = points.count
 
         typealias PointResult = (pointIdx: Int, forecast: ForecastGridResponse?, marine: MarineGridResponse?)
+        var completed = 0
         let results: [PointResult] = await withTaskGroup(of: PointResult.self) { group in
             for (ix, iy) in points {
                 group.addTask {
@@ -80,7 +85,11 @@ actor GridFetchService {
                 }
             }
             var out: [PointResult] = []
-            for await r in group { out.append(r) }
+            for await r in group {
+                out.append(r)
+                completed += 1
+                onProgress(completed, nTotal)
+            }
             return out
         }
 

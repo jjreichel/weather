@@ -9,6 +9,7 @@ final class WeatherViewModel {
     var observation: StationObservation?
     var selectedModel: WeatherModel = .icon
     var selectedLayer: WeatherLayer = .temperature
+    var windSpeedUnit: WindSpeedUnit = .kmh
     var isLoading = false
     var error: String?
 
@@ -37,6 +38,9 @@ final class WeatherViewModel {
     var currentGrid: WeatherGrid?
     var selectedHourIndex: Int = 0
     var isLoadingGrid = false
+    var gridLoadProgress: (completed: Int, total: Int)?
+    var isExportingGrib = false
+    var gribExportProgress: (completed: Int, total: Int)?
     var gridInspection: GridInspection?
 
     private let gridService = GridFetchService()
@@ -50,16 +54,39 @@ final class WeatherViewModel {
         let region = GridRegion(from: mapRegion)
         let model  = selectedModel          // Snapshot: Modell zum Aufrufzeitpunkt erfassen
         isLoadingGrid = true
+        gridLoadProgress = (0, region.allIndices.count)
         gridGeneration += 1
         let generation = gridGeneration
         gridTask = Task {
-            let grid = try? await gridService.fetchGrid(region: region, model: model)
+            let grid = try? await gridService.fetchGrid(region: region, model: model) { completed, total in
+                Task { @MainActor in
+                    guard generation == self.gridGeneration else { return }
+                    self.gridLoadProgress = (completed, total)
+                }
+            }
             guard !Task.isCancelled, generation == self.gridGeneration else { return }
             self.currentGrid = grid
             self.gridInspection = nil
             self.clampSelectedHourIndex()
             self.isLoadingGrid = false
+            self.gridLoadProgress = nil
         }
+    }
+
+    func exportGrib(grid: WeatherGrid, to url: URL) async throws {
+        isExportingGrib = true
+        gribExportProgress = (0, 1)
+        defer {
+            isExportingGrib = false
+            gribExportProgress = nil
+        }
+        try await Task.detached {
+            try GribWriter.write(grid: grid, to: url) { completed, total in
+                Task { @MainActor in
+                    self.gribExportProgress = (completed, total)
+                }
+            }
+        }.value
     }
 
     /// Grid für die zuletzt sichtbare Kartenregion neu laden (z. B. nach Modellwechsel).

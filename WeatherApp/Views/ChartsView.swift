@@ -63,7 +63,7 @@ struct ChartsView: View {
                             .frame(height: 150)
                         }
 
-                        ChartSection(title: "Windgeschwindigkeit (km/h)") {
+                        ChartSection(title: "Windgeschwindigkeit (\(weatherVM.windSpeedUnit.displayName))") {
                             Chart {
                                 ForEach(WeatherModel.allCases) { model in
                                     if let forecast = weatherVM.forecasts[model] {
@@ -71,7 +71,8 @@ struct ChartsView: View {
                                             if let wind = entry.windSpeed {
                                                 LineMark(
                                                     x: .value("Zeit", entry.time),
-                                                    y: .value("km/h", wind)
+                                                    y: .value(weatherVM.windSpeedUnit.displayName,
+                                                              weatherVM.windSpeedUnit.chartValue(kmh: wind))
                                                 )
                                                 .foregroundStyle(by: .value("Modell", model.displayName))
                                             }

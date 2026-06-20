@@ -3,6 +3,11 @@ import SwiftUI
 /// Farblegende für den aktuell gewählten Wetter-Layer.
 struct LayerLegendView: View {
     let layer: WeatherLayer
+    var windSpeedUnit: WindSpeedUnit = .kmh
+
+    private var stops: [WeatherLayer.ColorStop] {
+        layer.legendStops(windSpeedUnit: windSpeedUnit)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -11,8 +16,8 @@ struct LayerLegendView: View {
 
             GeometryReader { geo in
                 HStack(spacing: 0) {
-                    ForEach(Array(layer.legendStops.enumerated()), id: \.offset) { index, stop in
-                        let next = layer.legendStops[safe: index + 1]
+                    ForEach(Array(stops.enumerated()), id: \.offset) { index, stop in
+                        let next = stops[safe: index + 1]
                         Rectangle()
                             .fill(
                                 LinearGradient(
@@ -24,7 +29,7 @@ struct LayerLegendView: View {
                                     endPoint: .trailing
                                 )
                             )
-                            .frame(width: geo.size.width / CGFloat(layer.legendStops.count))
+                            .frame(width: geo.size.width / CGFloat(stops.count))
                     }
                 }
             }
@@ -32,11 +37,11 @@ struct LayerLegendView: View {
             .clipShape(RoundedRectangle(cornerRadius: 3))
 
             HStack {
-                ForEach(layer.legendStops, id: \.value) { stop in
-                    Text("\(stop.label) \(layer.unit)")
+                ForEach(stops, id: \.value) { stop in
+                    Text("\(stop.label) \(layer.unit(windSpeedUnit: windSpeedUnit))")
                         .font(.caption2.monospacedDigit())
                         .foregroundStyle(.secondary)
-                    if stop.value != layer.legendStops.last?.value { Spacer() }
+                    if stop.value != stops.last?.value { Spacer() }
                 }
             }
         }

@@ -12,14 +12,23 @@ extension WeatherLayer {
         switch self {
         case .temperature:   return "°C"
         case .precipitation: return "mm/h"
-        case .wind:          return "km/h"
+        case .wind:          return "km/h"  // Standard; siehe unit(windSpeedUnit:)
         case .cloudCover:    return "%"
         case .wave:          return "m"
         case .cape:          return "J/kg"
         }
     }
 
+    func unit(windSpeedUnit: WindSpeedUnit) -> String {
+        if self == .wind { return windSpeedUnit.displayName }
+        return unit
+    }
+
     var legendStops: [ColorStop] {
+        legendStops(windSpeedUnit: .kmh)
+    }
+
+    func legendStops(windSpeedUnit: WindSpeedUnit) -> [ColorStop] {
         switch self {
         case .temperature:
             return [
@@ -31,9 +40,9 @@ extension WeatherLayer {
             ]
         case .wind:
             return [
-                ColorStop(value: 0,  label: "0",  rgb: (0, 180, 0)),
-                ColorStop(value: 30, label: "30", rgb: (220, 220, 0)),
-                ColorStop(value: 60, label: "60", rgb: (200, 0, 0)),
+                ColorStop(value: 0,  label: windSpeedUnit.legendLabel(forKmh: 0),  rgb: (0, 180, 0)),
+                ColorStop(value: 30, label: windSpeedUnit.legendLabel(forKmh: 30), rgb: (220, 220, 0)),
+                ColorStop(value: 60, label: windSpeedUnit.legendLabel(forKmh: 60), rgb: (200, 0, 0)),
             ]
         case .precipitation:
             return [
@@ -67,11 +76,11 @@ extension WeatherLayer {
         Color(red: Double(rgb.0) / 255, green: Double(rgb.1) / 255, blue: Double(rgb.2) / 255)
     }
 
-    func format(_ value: Double) -> String {
+    func format(_ value: Double, windSpeedUnit: WindSpeedUnit = .kmh) -> String {
         switch self {
         case .temperature:   return String(format: "%.1f °C", value)
         case .precipitation: return String(format: "%.1f mm/h", value)
-        case .wind:          return String(format: "%.0f km/h", value)
+        case .wind:          return windSpeedUnit.format(kmh: value)
         case .cloudCover:    return String(format: "%.0f %%", value)
         case .wave:          return String(format: "%.1f m", value)
         case .cape:          return String(format: "%.0f J/kg", value)

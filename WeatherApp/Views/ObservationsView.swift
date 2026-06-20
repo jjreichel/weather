@@ -8,7 +8,7 @@ struct ObservationsView: View {
             if weatherVM.isLoading {
                 ProgressView("Lade Beobachtungen…")
             } else if let obs = weatherVM.observation {
-                ObservationDetailView(observation: obs)
+                ObservationDetailView(observation: obs, windSpeedUnit: weatherVM.windSpeedUnit)
             } else {
                 ContentUnavailableView(
                     "Keine Beobachtungen",
@@ -23,6 +23,7 @@ struct ObservationsView: View {
 
 struct ObservationDetailView: View {
     let observation: StationObservation
+    var windSpeedUnit: WindSpeedUnit = .kmh
 
     private static let timeFormatter: DateFormatter = {
         let f = DateFormatter()
@@ -47,7 +48,7 @@ struct ObservationDetailView: View {
                     LabeledContent("Temperatur", value: String(format: "%.1f °C", t))
                 }
                 if let w = observation.windSpeed {
-                    LabeledContent("Wind", value: String(format: "%.0f km/h", w))
+                    LabeledContent("Wind", value: windSpeedUnit.format(kmh: w))
                 }
                 if let d = observation.windDirection {
                     LabeledContent("Windrichtung", value: "\(Int(d))°")

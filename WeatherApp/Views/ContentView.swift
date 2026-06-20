@@ -77,6 +77,14 @@ struct ContentView: View {
                     }
                 }
                 ToolbarItemGroup(placement: .primaryAction) {
+                    Picker("Wind", selection: $weatherVM.windSpeedUnit) {
+                        ForEach(WindSpeedUnit.allCases) { unit in
+                            Text(unit.displayName).tag(unit)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(width: 120)
+
                     Picker("Modell", selection: $weatherVM.selectedModel) {
                         ForEach(WeatherModel.allCases) { model in
                             Text(model.displayName).tag(model)

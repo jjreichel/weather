@@ -8,7 +8,11 @@ enum GribWriter {
 
     // MARK: - Öffentliche API
 
-    static func write(grid: WeatherGrid, to url: URL) throws {
+    static func write(
+        grid: WeatherGrid,
+        to url: URL,
+        onProgress: ((Int, Int) -> Void)? = nil
+    ) throws {
         var output = Data()
         let refDate = grid.times.first ?? Date()
 
@@ -22,6 +26,18 @@ enum GribWriter {
             (.wave,         10,  0, 3,   1,  0),  // Signifikante Wellenhöhe (Ozean)
         ]
 
+        var totalSteps = 0
+        for (layer, _, _, _, _, _) in layerSpecs {
+            if grid.data[layer] != nil { totalSteps += grid.times.count }
+        }
+        totalSteps += grid.windDirection.count
+        var step = 0
+
+        func reportProgress() {
+            step += 1
+            onProgress?(step, totalSteps)
+        }
+
         for (layer, disc, cat, param, surf, level) in layerSpecs {
             guard let hourly = grid.data[layer] else { continue }
             for (hi, values) in hourly.enumerated() {
@@ -31,6 +47,7 @@ enum GribWriter {
                     surfaceType: surf, level: level,
                     forecastHour: UInt32(hi), refDate: refDate
                 ))
+                reportProgress()
             }
         }
 
@@ -42,6 +59,7 @@ enum GribWriter {
                 surfaceType: 103, level: 10,
                 forecastHour: UInt32(hi), refDate: refDate
             ))
+            reportProgress()
         }
 
         try output.write(to: url)
