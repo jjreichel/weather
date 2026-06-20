@@ -38,3 +38,18 @@ import MapKit
     #expect(gridRegion.nx >= 2)
     #expect(gridRegion.ny >= 2)
 }
+
+@Test func gridInspectionFindsNearestPoint() {
+    let region = GridRegion(latMin: 50.0, latMax: 52.0, lonMin: 9.0, lonMax: 11.0, nx: 5, ny: 5)
+    let points: [Double?] = Array(repeating: 10.0, count: 25)
+    let grid = WeatherGrid(
+        region: region,
+        model: .icon,
+        times: [Date()],
+        data: [.temperature: [points]],
+        windDirection: [Array(repeating: 180.0 as Double?, count: 25)]
+    )
+    let inspection = grid.inspection(at: 51.0, longitude: 10.0)
+    #expect(inspection != nil)
+    #expect(grid.value(at: inspection!.ix, iy: inspection!.iy, layer: .temperature, hourIndex: 0) == 10.0)
+}

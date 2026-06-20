@@ -1,5 +1,18 @@
 import SwiftUI
 import MapKit
+import AppKit
+
+/// MKMapView mit Klick-Erkennung für Rasterpunkt-Abfrage.
+final class ClickableMKMapView: MKMapView {
+    var onMapClick: ((CLLocationCoordinate2D) -> Void)?
+
+    override func mouseDown(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        let coord = convert(point, toCoordinateFrom: self)
+        onMapClick?(coord)
+        super.mouseDown(with: event)
+    }
+}
 
 /// Ersetzt den SwiftUI Map-View: gibt vollen Zugriff auf MKMapView-Delegate
 /// für GribOverlayRenderer und Karten-Regions-Tracking.
@@ -8,11 +21,16 @@ struct GribMapKitView: NSViewRepresentable {
     var locationVM: LocationViewModel
 
     func makeNSView(context: Context) -> MKMapView {
-        let mv = MKMapView()
+        let mv = ClickableMKMapView()
         mv.delegate = context.coordinator
         mv.showsCompass = true
         mv.showsScale = true
         mv.addOverlay(context.coordinator.overlay, level: .aboveRoads)
+        mv.onMapClick = { [weak coordinator = context.coordinator] coord in
+            Task { @MainActor in
+                coordinator?.handleMapClick(at: coord)
+            }
+        }
         return mv
     }
 
@@ -53,6 +71,9 @@ struct GribMapKitView: NSViewRepresentable {
 
         // Wind-Pfeile aktualisieren
         coord.updateWindAnnotations(on: mv, weatherVM: weatherVM)
+
+        // Inspektions-Pin aktualisieren
+        coord.updateInspectionPin(on: mv, weatherVM: weatherVM)
     }
 
     func makeCoordinator() -> Coordinator {
@@ -69,10 +90,28 @@ struct GribMapKitView: NSViewRepresentable {
         private var debounceTask: Task<Void, Never>?
         private var windAnnotations: [MKAnnotation] = []
         var locationPin: MKPointAnnotation?
+        var inspectionPin: MKPointAnnotation?
 
         init(weatherVM: WeatherViewModel, locationVM: LocationViewModel) {
             self.weatherVM = weatherVM
             self.locationVM = locationVM
+        }
+
+        func handleMapClick(at coordinate: CLLocationCoordinate2D) {
+            weatherVM.inspectGrid(at: coordinate)
+        }
+
+        func updateInspectionPin(on mapView: MKMapView, weatherVM: WeatherViewModel) {
+            if let old = inspectionPin {
+                mapView.removeAnnotation(old)
+                inspectionPin = nil
+            }
+            guard let inspection = weatherVM.gridInspection else { return }
+            let pin = MKPointAnnotation()
+            pin.coordinate = inspection.coordinate
+            pin.title = "Rasterpunkt"
+            mapView.addAnnotation(pin)
+            inspectionPin = pin
         }
 
         func mapView(_ mapView: MKMapView, regionDidChangeAnimated animated: Bool) {
@@ -98,6 +137,12 @@ struct GribMapKitView: NSViewRepresentable {
                 let v = MKAnnotationView(annotation: wind, reuseIdentifier: "wind")
                 v.image = wind.arrowImage
                 return v
+            }
+            if annotation === inspectionPin {
+                let view = MKMarkerAnnotationView(annotation: annotation, reuseIdentifier: "inspect")
+                view.markerTintColor = .systemOrange
+                view.glyphImage = NSImage(systemSymbolName: "scope", accessibilityDescription: nil)
+                return view
             }
             let view = MKMarkerAnnotationView(annotation: annotation, reuseIdentifier: "pin")
             view.glyphImage = NSImage(systemSymbolName: "location.fill", accessibilityDescription: nil)

@@ -19,15 +19,17 @@ enum SidebarItem: String, CaseIterable, Identifiable {
 struct ContentView: View {
     @State private var locationVM = LocationViewModel()
     @State private var weatherVM  = WeatherViewModel()
-    @State private var selectedItem: SidebarItem? = .map
+    @State private var selectedItem: SidebarItem = .map
     @State private var showLocationSearch = false
 
     var body: some View {
         NavigationSplitView {
             List(selection: $selectedItem) {
-                ForEach(SidebarItem.allCases) { item in
-                    Label(item.rawValue, systemImage: item.icon)
-                        .tag(item as SidebarItem?)
+                Section("Ansichten") {
+                    ForEach(SidebarItem.allCases) { item in
+                        Label(item.rawValue, systemImage: item.icon)
+                            .tag(item)
+                    }
                 }
                 if !locationVM.favorites.isEmpty {
                     Section("Favoriten") {
@@ -57,12 +59,15 @@ struct ContentView: View {
                     }
                 }
                 switch selectedItem {
-                case .map:          MapWeatherView(weatherVM: weatherVM, locationVM: locationVM)
-                case .charts:       ChartsView(weatherVM: weatherVM)
-                case .observations: ObservationsView(weatherVM: weatherVM)
-                case nil:           Text("Wähle eine Ansicht").foregroundStyle(.secondary)
+                case .map:
+                    MapWeatherView(weatherVM: weatherVM, locationVM: locationVM)
+                case .charts:
+                    ChartsView(weatherVM: weatherVM)
+                case .observations:
+                    ObservationsView(weatherVM: weatherVM)
                 }
             }
+            .navigationTitle(selectedItem.rawValue)
             .toolbar {
                 ToolbarItem(placement: .navigation) {
                     Button {

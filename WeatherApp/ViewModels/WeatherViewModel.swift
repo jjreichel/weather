@@ -37,6 +37,7 @@ final class WeatherViewModel {
     var currentGrid: WeatherGrid?
     var selectedHourIndex: Int = 0
     var isLoadingGrid = false
+    var gridInspection: GridInspection?
 
     private let gridService = GridFetchService()
     private var gridTask: Task<Void, Never>?
@@ -55,6 +56,7 @@ final class WeatherViewModel {
             let grid = try? await gridService.fetchGrid(region: region, model: model)
             guard !Task.isCancelled, generation == self.gridGeneration else { return }
             self.currentGrid = grid
+            self.gridInspection = nil
             self.clampSelectedHourIndex()
             self.isLoadingGrid = false
         }
@@ -69,6 +71,15 @@ final class WeatherViewModel {
     private func clampSelectedHourIndex() {
         guard let grid = currentGrid else { return }
         selectedHourIndex = min(selectedHourIndex, max(0, grid.times.count - 1))
+    }
+
+    func inspectGrid(at coordinate: CLLocationCoordinate2D) {
+        guard let grid = currentGrid else { return }
+        gridInspection = grid.inspection(at: coordinate.latitude, longitude: coordinate.longitude)
+    }
+
+    func clearGridInspection() {
+        gridInspection = nil
     }
 
     private func fetchObservation(for location: Location) async -> StationObservation? {

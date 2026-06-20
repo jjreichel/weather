@@ -14,19 +14,37 @@ struct MapWeatherView: View {
 
     var body: some View {
         ZStack(alignment: .bottom) {
-            // Karte mit Overlay-Rendering via MKMapView
             GribMapKitView(weatherVM: weatherVM, locationVM: locationVM)
                 .ignoresSafeArea()
 
-            // Zeitslider am unteren Rand
-            if let grid = weatherVM.currentGrid, grid.times.count > 1 {
-                TimeSliderView(times: grid.times,
-                               selectedIndex: $weatherVM.selectedHourIndex)
-                    .padding(.horizontal)
-                    .padding(.vertical, 8)
-                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
-                    .padding(10)
+            HStack(alignment: .bottom, spacing: 10) {
+                LayerLegendView(layer: weatherVM.selectedLayer)
+
+                Spacer()
+
+                VStack(alignment: .trailing, spacing: 8) {
+                    if let grid = weatherVM.currentGrid,
+                       let inspection = weatherVM.gridInspection {
+                        GridPointDetailView(
+                            grid: grid,
+                            inspection: inspection,
+                            hourIndex: weatherVM.selectedHourIndex
+                        ) {
+                            weatherVM.clearGridInspection()
+                        }
+                    }
+
+                    if let grid = weatherVM.currentGrid, grid.times.count > 1 {
+                        TimeSliderView(times: grid.times,
+                                       selectedIndex: $weatherVM.selectedHourIndex)
+                            .frame(maxWidth: 360)
+                            .padding(.horizontal)
+                            .padding(.vertical, 8)
+                            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+                    }
+                }
             }
+            .padding(10)
         }
         .overlay(alignment: .topTrailing) {
             VStack(alignment: .trailing, spacing: 8) {
