@@ -88,6 +88,7 @@ struct GribMapKitView: NSViewRepresentable {
         let overlay = GribMapOverlay()
         var lastCenteredLocation: Location?
         private var debounceTask: Task<Void, Never>?
+        private var lastFetchedRegion: MKCoordinateRegion?
         private var windAnnotations: [MKAnnotation] = []
         var locationPin: MKPointAnnotation?
         var inspectionPin: MKPointAnnotation?
@@ -120,8 +121,29 @@ struct GribMapKitView: NSViewRepresentable {
             debounceTask = Task { @MainActor in
                 try? await Task.sleep(for: .seconds(0.8))
                 guard !Task.isCancelled else { return }
+                if let last = self.lastFetchedRegion,
+                   !Self.regionChangedSignificantly(region, comparedTo: last) {
+                    return
+                }
+                self.lastFetchedRegion = region
                 self.weatherVM.loadGrid(for: region)
             }
+        }
+
+        /// Ignoriert Mikrobewegungen — besonders wichtig bei hohem Zoom (kleine Spannweite).
+        private static func regionChangedSignificantly(
+            _ region: MKCoordinateRegion,
+            comparedTo other: MKCoordinateRegion
+        ) -> Bool {
+            let refSpan = max(min(region.span.latitudeDelta, other.span.latitudeDelta), 1e-6)
+            let centerShift = hypot(
+                region.center.latitude - other.center.latitude,
+                region.center.longitude - other.center.longitude
+            )
+            if centerShift / refSpan > 0.12 { return true }
+            if abs(region.span.latitudeDelta - other.span.latitudeDelta) / refSpan > 0.12 { return true }
+            if abs(region.span.longitudeDelta - other.span.longitudeDelta) / refSpan > 0.12 { return true }
+            return false
         }
 
         func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {

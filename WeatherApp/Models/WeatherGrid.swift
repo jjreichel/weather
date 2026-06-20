@@ -31,12 +31,16 @@ struct GridRegion: Sendable, Equatable {
         (0..<ny).flatMap { iy in (0..<nx).map { ix in (ix: ix, iy: iy) } }
     }
 
-    /// Schrittweite basierend auf Kartenspanne (immer ~300 Punkte)
+    /// Schrittweite basierend auf Kartenspanne (Ziel: ~300 Punkte, feiner bei hohem Zoom).
     static func step(for latSpan: Double) -> Double {
-        switch latSpan {
+        let span = max(latSpan, 1e-6)
+        switch span {
+        case ..<0.05:  return max(span / 17, 0.002)
+        case ..<0.25:  return 0.025
+        case ..<1:     return 0.05
         case ..<5:     return 0.1
-        case 5..<15:   return 0.25
-        case 15..<40:  return 0.5
+        case ..<15:    return 0.25
+        case ..<40:    return 0.5
         default:       return 2.0
         }
     }

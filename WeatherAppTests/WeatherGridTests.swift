@@ -26,6 +26,29 @@ import MapKit
     #expect(GridRegion.step(for: 3.0) == 0.1)
 }
 
+@Test func gridStepForHighZoom() {
+    #expect(GridRegion.step(for: 0.02) < 0.01)
+    #expect(GridRegion.step(for: 0.02) >= 0.002)
+}
+
+@Test func gridRegionFromHighZoomMapRegion() {
+    let center = CLLocationCoordinate2D(latitude: 51.0, longitude: 10.0)
+    let span = MKCoordinateSpan(latitudeDelta: 0.03, longitudeDelta: 0.04)
+    let gridRegion = GridRegion(from: MKCoordinateRegion(center: center, span: span))
+    #expect(gridRegion.nx >= 2)
+    #expect(gridRegion.ny >= 2)
+    #expect(gridRegion.nx * gridRegion.ny <= 300)
+    #expect(gridRegion.latMax - gridRegion.latMin >= 0.02)
+    #expect(gridRegion.lonMax - gridRegion.lonMin >= 0.02)
+}
+
+@Test func gridRegionFromExtremeZoomUsesMinimumSpan() {
+    let center = CLLocationCoordinate2D(latitude: 51.0, longitude: 10.0)
+    let span = MKCoordinateSpan(latitudeDelta: 0.001, longitudeDelta: 0.001)
+    let gridRegion = GridRegion(from: MKCoordinateRegion(center: center, span: span))
+    #expect(gridRegion.latMax - gridRegion.latMin >= GridRegion.minimumMapSpan - 0.001)
+}
+
 @Test func gridStepForLargeSpan() {
     #expect(GridRegion.step(for: 50.0) == 2.0)
 }

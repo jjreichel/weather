@@ -56,6 +56,7 @@ actor GridFetchService {
     private let forecastBase = URL(string: "https://api.open-meteo.com/v1/forecast")!
     private let marineBase   = URL(string: "https://marine-api.open-meteo.com/v1/marine")!
     private let session: URLSession
+    private let maxConcurrentFetches = 20
 
     init(session: URLSession = {
         let c = URLSessionConfiguration.default
@@ -73,14 +74,17 @@ actor GridFetchService {
 
         typealias PointResult = (pointIdx: Int, forecast: ForecastGridResponse?, marine: MarineGridResponse?)
         var completed = 0
+        let gate = FetchGate(limit: maxConcurrentFetches)
         let results: [PointResult] = await withTaskGroup(of: PointResult.self) { group in
             for (ix, iy) in points {
                 group.addTask {
+                    await gate.acquire()
                     let lat = region.latitude(iy: iy)
                     let lon = region.longitude(ix: ix)
                     let idx = region.index(ix: ix, iy: iy)
                     let forecast = try? await self.fetchForecast(lat: lat, lon: lon, model: model)
                     let marine   = try? await self.fetchMarine(lat: lat, lon: lon)
+                    await gate.release()
                     return (idx, forecast, marine)
                 }
             }
@@ -162,5 +166,30 @@ actor GridFetchService {
         ]
         let (data, _) = try await session.data(from: c.url!)
         return try JSONDecoder().decode(MarineGridResponse.self, from: data)
+    }
+}
+
+// MARK: - Begrenzte Parallelität (Open-Meteo Rate-Limits)
+
+private actor FetchGate {
+    private var permits: Int
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    init(limit: Int) { permits = limit }
+
+    func acquire() async {
+        if permits > 0 {
+            permits -= 1
+            return
+        }
+        await withCheckedContinuation { waiters.append($0) }
+    }
+
+    func release() {
+        if !waiters.isEmpty {
+            waiters.removeFirst().resume()
+        } else {
+            permits += 1
+        }
     }
 }

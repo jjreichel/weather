@@ -58,6 +58,12 @@ final class WeatherViewModel {
         gridGeneration += 1
         let generation = gridGeneration
         gridTask = Task {
+            defer {
+                if generation == self.gridGeneration {
+                    self.isLoadingGrid = false
+                    self.gridLoadProgress = nil
+                }
+            }
             let grid = try? await gridService.fetchGrid(region: region, model: model) { completed, total in
                 Task { @MainActor in
                     guard generation == self.gridGeneration else { return }
@@ -68,8 +74,6 @@ final class WeatherViewModel {
             self.currentGrid = grid
             self.gridInspection = nil
             self.clampSelectedHourIndex()
-            self.isLoadingGrid = false
-            self.gridLoadProgress = nil
         }
     }
 
