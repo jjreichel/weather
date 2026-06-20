@@ -39,11 +39,15 @@ struct GribMapKitView: NSViewRepresentable {
 
         // Overlay-Properties aktualisieren
         let overlay = coord.overlay
+        let previousBounds = overlay.boundingMapRect
         overlay.grid              = weatherVM.currentGrid
         overlay.selectedLayer     = weatherVM.selectedLayer
         overlay.selectedHourIndex = weatherVM.selectedHourIndex
 
-        if let renderer = mv.renderer(for: overlay) as? GribOverlayRenderer {
+        if !MKMapRectEqualToRect(overlay.boundingMapRect, previousBounds) {
+            mv.removeOverlay(overlay)
+            mv.addOverlay(overlay, level: .aboveRoads)
+        } else if let renderer = mv.renderer(for: overlay) as? GribOverlayRenderer {
             renderer.setNeedsDisplay()
         }
 
@@ -156,7 +160,8 @@ final class WindArrowAnnotation: NSObject, MKAnnotation {
         return NSImage(size: size, flipped: false) { rect in
             let ctx = NSGraphicsContext.current!.cgContext
             ctx.translateBy(x: rect.midX, y: rect.midY)
-            ctx.rotate(by: CGFloat(self.direction) * .pi / 180)
+            // Meteorologische Richtung = Herkunft; Pfeil zeigt Flugrichtung (+180°)
+            ctx.rotate(by: CGFloat(self.direction + 180) * .pi / 180)
             let length = CGFloat(min(1.0, self.speed / 60)) * 8 + 4
             ctx.setStrokeColor(NSColor.white.cgColor)
             ctx.setLineWidth(1.5)

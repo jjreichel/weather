@@ -57,7 +57,11 @@ struct MapWeatherView: View {
         panel.nameFieldStringValue = "Wettermodell-\(grid.model.displayName).grib2"
         panel.begin { response in
             guard response == .OK, let url = panel.url else { return }
-            try? GribWriter.write(grid: grid, to: url)
+            do {
+                try GribWriter.write(grid: grid, to: url)
+            } catch {
+                NSAlert(error: error).runModal()
+            }
         }
     }
 }
@@ -76,15 +80,19 @@ struct TimeSliderView: View {
         return f
     }()
 
+    private var safeIndex: Int {
+        min(max(0, selectedIndex), times.count - 1)
+    }
+
     var body: some View {
         guard !times.isEmpty else { return AnyView(EmptyView()) }
         return AnyView(VStack(spacing: 2) {
-            Text(TimeSliderView.fmt.string(from: times[selectedIndex]) + " UTC")
+            Text(TimeSliderView.fmt.string(from: times[safeIndex]) + " UTC")
                 .font(.caption.monospacedDigit())
                 .foregroundStyle(.secondary)
 
             Slider(value: Binding(
-                get: { Double(selectedIndex) },
+                get: { Double(safeIndex) },
                 set: { selectedIndex = Int($0.rounded()) }
             ), in: 0...Double(times.count - 1), step: 1)
         })

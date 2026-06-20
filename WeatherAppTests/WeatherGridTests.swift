@@ -29,3 +29,12 @@ import MapKit
 @Test func gridStepForLargeSpan() {
     #expect(GridRegion.step(for: 50.0) == 2.0)
 }
+
+@Test func gridRegionFromMapRegionCapsPointCount() {
+    let center = CLLocationCoordinate2D(latitude: 51.0, longitude: 10.0)
+    let span = MKCoordinateSpan(latitudeDelta: 6.0, longitudeDelta: 6.0)
+    let gridRegion = GridRegion(from: MKCoordinateRegion(center: center, span: span))
+    #expect(gridRegion.nx * gridRegion.ny <= 300)
+    #expect(gridRegion.nx >= 2)
+    #expect(gridRegion.ny >= 2)
+}

@@ -90,5 +90,8 @@ struct ContentView: View {
                 await weatherVM.loadAll(for: loc)
             }
         }
+        .onChange(of: weatherVM.selectedModel) { _, _ in
+            weatherVM.reloadGridForCurrentRegion()
+        }
     }
 }
