@@ -39,6 +39,7 @@ final class WeatherViewModel {
     var selectedHourIndex: Int = 0
     var isLoadingGrid = false
     var gridLoadProgress: (completed: Int, total: Int)?
+    var gridLoadError: String?
     var isExportingGrib = false
     var gribExportProgress: (completed: Int, total: Int)?
     var gridInspection: GridInspection?
@@ -52,8 +53,9 @@ final class WeatherViewModel {
         gridTask?.cancel()
         lastMapRegion = mapRegion
         let region = GridRegion(from: mapRegion)
-        let model  = selectedModel          // Snapshot: Modell zum Aufrufzeitpunkt erfassen
+        let model  = selectedModel
         isLoadingGrid = true
+        gridLoadError = nil
         gridLoadProgress = (0, region.allIndices.count)
         gridGeneration += 1
         let generation = gridGeneration
@@ -64,16 +66,23 @@ final class WeatherViewModel {
                     self.gridLoadProgress = nil
                 }
             }
-            let grid = try? await gridService.fetchGrid(region: region, model: model) { completed, total in
-                Task { @MainActor in
-                    guard generation == self.gridGeneration else { return }
-                    self.gridLoadProgress = (completed, total)
+            do {
+                let grid = try await gridService.fetchGrid(region: region, model: model) { completed, total in
+                    Task { @MainActor in
+                        guard generation == self.gridGeneration else { return }
+                        self.gridLoadProgress = (completed, total)
+                    }
                 }
+                guard !Task.isCancelled, generation == self.gridGeneration else { return }
+                self.currentGrid = grid
+                self.gridInspection = nil
+                self.clampSelectedHourIndex()
+            } catch is CancellationError {
+                return
+            } catch {
+                guard generation == self.gridGeneration else { return }
+                self.gridLoadError = error.localizedDescription
             }
-            guard !Task.isCancelled, generation == self.gridGeneration else { return }
-            self.currentGrid = grid
-            self.gridInspection = nil
-            self.clampSelectedHourIndex()
         }
     }
 

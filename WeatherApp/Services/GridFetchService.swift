@@ -56,11 +56,12 @@ actor GridFetchService {
     private let forecastBase = URL(string: "https://api.open-meteo.com/v1/forecast")!
     private let marineBase   = URL(string: "https://marine-api.open-meteo.com/v1/marine")!
     private let session: URLSession
-    private let maxConcurrentFetches = 20
+    private let batchSize = 20
 
     init(session: URLSession = {
         let c = URLSessionConfiguration.default
-        c.timeoutIntervalForRequest = 20
+        c.timeoutIntervalForRequest = 30
+        c.waitsForConnectivity = true
         return URLSession(configuration: c)
     }()) { self.session = session }
 
@@ -73,31 +74,41 @@ actor GridFetchService {
         let nTotal = points.count
 
         typealias PointResult = (pointIdx: Int, forecast: ForecastGridResponse?, marine: MarineGridResponse?)
+        var results: [PointResult] = []
+        results.reserveCapacity(nTotal)
         var completed = 0
-        let gate = FetchGate(limit: maxConcurrentFetches)
-        let results: [PointResult] = await withTaskGroup(of: PointResult.self) { group in
-            for (ix, iy) in points {
-                group.addTask {
-                    await gate.acquire()
-                    let lat = region.latitude(iy: iy)
-                    let lon = region.longitude(ix: ix)
-                    let idx = region.index(ix: ix, iy: iy)
-                    let forecast = try? await self.fetchForecast(lat: lat, lon: lon, model: model)
-                    let marine   = try? await self.fetchMarine(lat: lat, lon: lon)
-                    await gate.release()
-                    return (idx, forecast, marine)
+
+        // Batchweise laden — vermeidet Gate-Deadlocks bei Task-Abbruch
+        for batchStart in stride(from: 0, to: points.count, by: batchSize) {
+            try Task.checkCancellation()
+            let batchEnd = min(batchStart + batchSize, points.count)
+            let batch = points[batchStart..<batchEnd]
+
+            let batchResults = await withTaskGroup(of: PointResult.self) { group in
+                for (ix, iy) in batch {
+                    group.addTask {
+                        let lat = region.latitude(iy: iy)
+                        let lon = region.longitude(ix: ix)
+                        let idx = region.index(ix: ix, iy: iy)
+                        let forecast = try? await self.fetchForecast(lat: lat, lon: lon, model: model)
+                        let marine   = try? await self.fetchMarine(lat: lat, lon: lon)
+                        return (idx, forecast, marine)
+                    }
                 }
+                var batchOut: [PointResult] = []
+                for await r in group { batchOut.append(r) }
+                return batchOut
             }
-            var out: [PointResult] = []
-            for await r in group {
-                out.append(r)
-                completed += 1
-                onProgress(completed, nTotal)
-            }
-            return out
+
+            results.append(contentsOf: batchResults)
+            completed += batch.count
+            onProgress(completed, nTotal)
         }
 
         let times = results.compactMap { $0.forecast?.times }.first ?? []
+        guard !times.isEmpty else {
+            throw WeatherError.networkError("Keine Wetterdaten für dieses Kartenfenster erhalten.")
+        }
         let nHours = times.count
 
         var tempData  = Array(repeating: Array(repeating: Optional<Double>.none, count: nTotal), count: nHours)
@@ -151,8 +162,22 @@ actor GridFetchService {
             URLQueryItem(name: "forecast_days", value: "7"),
             URLQueryItem(name: "timezone",      value: "UTC"),
         ]
-        let (data, _) = try await session.data(from: c.url!)
-        return try JSONDecoder().decode(ForecastGridResponse.self, from: data)
+        for attempt in 0..<3 {
+            do {
+                let (data, response) = try await session.data(from: c.url!)
+                if let http = response as? HTTPURLResponse, http.statusCode == 429 {
+                    try await Task.sleep(for: .seconds(Double(attempt + 1) * 2))
+                    continue
+                }
+                return try JSONDecoder().decode(ForecastGridResponse.self, from: data)
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                guard attempt < 2 else { throw error }
+                try await Task.sleep(for: .seconds(Double(attempt + 1)))
+            }
+        }
+        throw WeatherError.networkError("Open-Meteo-Anfrage fehlgeschlagen.")
     }
 
     private func fetchMarine(lat: Double, lon: Double) async throws -> MarineGridResponse {
@@ -166,30 +191,5 @@ actor GridFetchService {
         ]
         let (data, _) = try await session.data(from: c.url!)
         return try JSONDecoder().decode(MarineGridResponse.self, from: data)
-    }
-}
-
-// MARK: - Begrenzte Parallelität (Open-Meteo Rate-Limits)
-
-private actor FetchGate {
-    private var permits: Int
-    private var waiters: [CheckedContinuation<Void, Never>] = []
-
-    init(limit: Int) { permits = limit }
-
-    func acquire() async {
-        if permits > 0 {
-            permits -= 1
-            return
-        }
-        await withCheckedContinuation { waiters.append($0) }
-    }
-
-    func release() {
-        if !waiters.isEmpty {
-            waiters.removeFirst().resume()
-        } else {
-            permits += 1
-        }
     }
 }

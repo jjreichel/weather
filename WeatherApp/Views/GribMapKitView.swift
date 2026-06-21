@@ -116,6 +116,8 @@ struct GribMapKitView: NSViewRepresentable {
         }
 
         func mapView(_ mapView: MKMapView, regionDidChangeAnimated animated: Bool) {
+            // Während ein Download läuft, keinen neuen starten (verhindert Abbruch durch erneutes Pan/Zoom)
+            guard !weatherVM.isLoadingGrid, !weatherVM.isExportingGrib else { return }
             let region = mapView.region
             debounceTask?.cancel()
             debounceTask = Task { @MainActor in

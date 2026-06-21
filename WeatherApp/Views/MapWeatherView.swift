@@ -58,6 +58,13 @@ struct MapWeatherView: View {
                         total: progress.total
                     )
                 }
+                if let err = weatherVM.gridLoadError {
+                    Text(err)
+                        .font(.caption2)
+                        .foregroundStyle(.red)
+                        .multilineTextAlignment(.trailing)
+                        .frame(maxWidth: 200)
+                }
             }
             .padding()
         }
