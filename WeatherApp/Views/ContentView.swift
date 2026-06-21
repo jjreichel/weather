@@ -1,4 +1,5 @@
 import SwiftUI
+import MapKit
 
 enum SidebarItem: String, CaseIterable, Identifiable {
     case map          = "Karte"
@@ -77,6 +78,25 @@ struct ContentView: View {
                     }
                 }
                 ToolbarItemGroup(placement: .primaryAction) {
+                    if selectedItem == .map {
+                        Button {
+                            let region = weatherVM.downloadRegion(fallback: locationVM.selectedLocation)
+                            weatherVM.startGridLoad(for: region)
+                        } label: {
+                            Label("GRIB2 laden", systemImage: "cloud.fill")
+                        }
+                        .disabled(weatherVM.isLoadingGrid || weatherVM.isExportingGrib)
+
+                        Button {
+                            GribDownloadPresenter.presentSavePanel(weatherVM: weatherVM)
+                        } label: {
+                            Label("GRIB2 speichern…", systemImage: "arrow.down.doc")
+                        }
+                        .disabled(weatherVM.currentGrid == nil
+                                  || weatherVM.isLoadingGrid
+                                  || weatherVM.isExportingGrib)
+                    }
+
                     Picker("Wind", selection: $weatherVM.windSpeedUnit) {
                         ForEach(WindSpeedUnit.allCases) { unit in
                             Text(unit.displayName).tag(unit)
@@ -100,6 +120,10 @@ struct ContentView: View {
         }
         .task(id: locationVM.selectedLocation?.id) {
             if let loc = locationVM.selectedLocation {
+                weatherVM.setVisibleMapRegion(MKCoordinateRegion(
+                    center: loc.coordinate,
+                    span: MKCoordinateSpan(latitudeDelta: 6, longitudeDelta: 6)
+                ))
                 await weatherVM.loadAll(for: loc)
             }
         }

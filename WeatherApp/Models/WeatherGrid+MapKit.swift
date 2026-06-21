@@ -16,7 +16,7 @@ extension GridRegion {
         let lon1 = region.center.longitude + lonSpan / 2
         var nx = max(2, Int(((lon1 - lon0) / step).rounded(.up)) + 1)
         var ny = max(2, Int(((lat1 - lat0) / step).rounded(.up)) + 1)
-        let targetPoints = 300
+        let targetPoints = 200
         if nx * ny > targetPoints {
             let scale = sqrt(Double(targetPoints) / Double(nx * ny))
             nx = max(2, Int(Double(nx) * scale))

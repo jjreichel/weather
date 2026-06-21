@@ -47,14 +47,66 @@ final class WeatherViewModel {
     private let gridService = GridFetchService()
     private var downloadTask: Task<Void, Never>?
     private var lastReportedProgress = 0
+    private var gridLoadGeneration = 0
     private(set) var lastMapRegion: MKCoordinateRegion?
 
-    /// Sichtbaren Kartenbereich setzen (nur bei merklicher Änderung → weniger UI-Updates).
-    func setVisibleMapRegion(_ mapRegion: MKCoordinateRegion) {
-        if let last = lastMapRegion,
-           !Self.regionChangedSignificantly(mapRegion, comparedTo: last) {
-            return
+    /// Kartenregion für GRIB-Download (Karte → Ort → Standard-Mitteleuropa).
+    func downloadRegion(fallback location: Location?) -> MKCoordinateRegion {
+        if let lastMapRegion { return lastMapRegion }
+        if let location {
+            return MKCoordinateRegion(
+                center: location.coordinate,
+                span: MKCoordinateSpan(latitudeDelta: 6, longitudeDelta: 6)
+            )
         }
+        return Self.defaultMapRegion
+    }
+
+    private static let defaultMapRegion = MKCoordinateRegion(
+        center: CLLocationCoordinate2D(latitude: 51.0, longitude: 10.0),
+        span: MKCoordinateSpan(latitudeDelta: 6, longitudeDelta: 6)
+    )
+
+    /// Raster für die Karte laden (ohne Speicherdialog).
+    func startGridLoad(for mapRegion: MKCoordinateRegion) {
+        if isLoadingGrid { return }
+        gridLoadGeneration += 1
+        let generation = gridLoadGeneration
+        gridLoadError = nil
+        downloadTask = Task {
+            do {
+                try await fetchGrid(for: mapRegion, generation: generation)
+            } catch is CancellationError {
+                return
+            } catch {
+                if generation == gridLoadGeneration {
+                    gridLoadError = error.localizedDescription
+                }
+            }
+        }
+    }
+
+    /// Aktuelles Raster als GRIB2-Datei speichern.
+    func startGridExport(to url: URL) {
+        downloadTask?.cancel()
+        gridLoadError = nil
+        downloadTask = Task {
+            do {
+                guard let grid = currentGrid else {
+                    throw WeatherError.noData
+                }
+                try await exportGrib(grid: grid, to: url)
+            } catch is CancellationError {
+                return
+            } catch {
+                gridLoadError = error.localizedDescription
+            }
+        }
+    }
+
+    /// Sichtbaren Kartenbereich setzen; Raster nur bei merklicher Bewegung verwerfen.
+    func setVisibleMapRegion(_ mapRegion: MKCoordinateRegion) {
+        if let last = lastMapRegion, Self.regionsEqual(last, mapRegion) { return }
         if let last = lastMapRegion,
            Self.regionChangedSignificantly(mapRegion, comparedTo: last),
            currentGrid != nil {
@@ -65,7 +117,11 @@ final class WeatherViewModel {
     }
 
     /// GRIB-Raster für den sichtbaren Kartenbereich laden (nur auf Nutzeraktion).
-    func fetchGrid(for mapRegion: MKCoordinateRegion) async throws {
+    func fetchGrid(for mapRegion: MKCoordinateRegion, generation: Int? = nil) async throws {
+        let activeGeneration = generation ?? {
+            gridLoadGeneration += 1
+            return gridLoadGeneration
+        }()
         let region = GridRegion(from: mapRegion)
         let model  = selectedModel
         isLoadingGrid = true
@@ -73,12 +129,14 @@ final class WeatherViewModel {
         lastReportedProgress = 0
         gridLoadProgress = (0, region.allIndices.count)
         defer {
-            isLoadingGrid = false
-            gridLoadProgress = nil
+            if activeGeneration == gridLoadGeneration {
+                isLoadingGrid = false
+                gridLoadProgress = nil
+            }
         }
         let grid = try await gridService.fetchGrid(region: region, model: model) { [weak self] completed, total in
             Task { @MainActor in
-                guard let self else { return }
+                guard let self, activeGeneration == self.gridLoadGeneration else { return }
                 guard completed == total
                         || completed - self.lastReportedProgress >= 5
                         || self.lastReportedProgress == 0 else { return }
@@ -87,6 +145,7 @@ final class WeatherViewModel {
             }
         }
         try Task.checkCancellation()
+        guard activeGeneration == gridLoadGeneration else { return }
         currentGrid = grid
         lastMapRegion = mapRegion
         gridInspection = nil
@@ -100,7 +159,9 @@ final class WeatherViewModel {
             isExportingGrib = false
             gribExportProgress = nil
         }
+        let accessed = url.startAccessingSecurityScopedResource()
         try await Task.detached {
+            defer { if accessed { url.stopAccessingSecurityScopedResource() } }
             try GribWriter.write(grid: grid, to: url) { completed, total in
                 Task { @MainActor in
                     self.gribExportProgress = (completed, total)
@@ -119,6 +180,7 @@ final class WeatherViewModel {
     }
 
     func cancelDownload() {
+        gridLoadGeneration += 1
         downloadTask?.cancel()
         downloadTask = nil
         isLoadingGrid = false
@@ -167,6 +229,13 @@ final class WeatherViewModel {
         if abs(region.span.latitudeDelta - other.span.latitudeDelta) / refSpan > 0.05 { return true }
         if abs(region.span.longitudeDelta - other.span.longitudeDelta) / refSpan > 0.05 { return true }
         return false
+    }
+
+    static func regionsEqual(_ a: MKCoordinateRegion, _ b: MKCoordinateRegion) -> Bool {
+        abs(a.center.latitude - b.center.latitude) < 1e-8
+            && abs(a.center.longitude - b.center.longitude) < 1e-8
+            && abs(a.span.latitudeDelta - b.span.latitudeDelta) < 1e-8
+            && abs(a.span.longitudeDelta - b.span.longitudeDelta) < 1e-8
     }
 
     private func fetchObservation(for location: Location) async -> StationObservation? {

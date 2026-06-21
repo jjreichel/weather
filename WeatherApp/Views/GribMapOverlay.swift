@@ -29,49 +29,120 @@ final class GribMapOverlay: NSObject, MKOverlay {
 final class GribOverlayRenderer: MKOverlayRenderer {
     var gridOverlay: GribMapOverlay { overlay as! GribMapOverlay }
 
+    /// Max. Texturgröße pro Draw-Aufruf (Performance).
+    private static let maxRenderDimension = 768
+    /// Mindest-Faktor gegenüber Rohraster (schärfere Kanten).
+    private static let minUpscalePerAxis = 6
+
     override func draw(_ mapRect: MKMapRect, zoomScale: MKZoomScale, in ctx: CGContext) {
-        // Snapshot: MapKit ruft draw auf einem Render-Thread auf; alle Properties einmalig lesen
         let go = gridOverlay
         let layer = go.selectedLayer
         let hourIndex = go.selectedHourIndex
         guard let grid = go.grid,
               let values = grid.data[layer]?[safe: hourIndex]
         else { return }
-        let nx = grid.region.nx
-        let ny = grid.region.ny
 
-        // CGImage erstellen: Zeile 0 = Norden (iy = ny-1)
-        var pixels = [UInt8](repeating: 0, count: nx * ny * 4)
-        for cgRow in 0..<ny {
-            let gridIY = ny - 1 - cgRow
-            for ix in 0..<nx {
-                let pIdx = grid.region.index(ix: ix, iy: gridIY)
-                let value = values[safe: pIdx].flatMap { $0 }
+        let region = grid.region
+        let nx = region.nx
+        let ny = region.ny
+        let drawRect = rect(for: gridOverlay.boundingMapRect)
+
+        // Zoom-abhängige Auflösung: beim Hineinzoomen mehr Pixel, max. gedeckelt
+        let zoomFactor = max(1.0, min(Double(zoomScale) * 0.35, 6.0))
+        let renderW = min(
+            max(nx * Self.minUpscalePerAxis, Int(drawRect.width * zoomFactor)),
+            Self.maxRenderDimension
+        )
+        let renderH = min(
+            max(ny * Self.minUpscalePerAxis, Int(drawRect.height * zoomFactor)),
+            Self.maxRenderDimension
+        )
+
+        let latSpan = region.latMax - region.latMin
+        let lonSpan = region.lonMax - region.lonMin
+        var pixels = [UInt8](repeating: 0, count: renderW * renderH * 4)
+
+        for py in 0..<renderH {
+            let lat = region.latMax - (Double(py) + 0.5) / Double(renderH) * latSpan
+            for px in 0..<renderW {
+                let lon = region.lonMin + (Double(px) + 0.5) / Double(renderW) * lonSpan
+                let value = Self.bilinearSample(values: values, region: region, lat: lat, lon: lon)
                 let (r, g, b, a) = rgba(value: value, layer: layer)
-                let base = (cgRow * nx + ix) * 4
-                pixels[base]   = r; pixels[base+1] = g
-                pixels[base+2] = b; pixels[base+3] = a
+                let base = (py * renderW + px) * 4
+                pixels[base] = r
+                pixels[base + 1] = g
+                pixels[base + 2] = b
+                pixels[base + 3] = a
             }
         }
 
         let colorSpace = CGColorSpaceCreateDeviceRGB()
         guard let provider = CGDataProvider(data: Data(pixels) as CFData),
-              let cgImage = CGImage(width: nx, height: ny,
-                                    bitsPerComponent: 8, bitsPerPixel: 32,
-                                    bytesPerRow: nx * 4, space: colorSpace,
-                                    bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.last.rawValue),
-                                    provider: provider, decode: nil,
-                                    shouldInterpolate: true,
-                                    intent: .defaultIntent)
+              let cgImage = CGImage(
+                width: renderW,
+                height: renderH,
+                bitsPerComponent: 8,
+                bitsPerPixel: 32,
+                bytesPerRow: renderW * 4,
+                space: colorSpace,
+                bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.last.rawValue),
+                provider: provider,
+                decode: nil,
+                shouldInterpolate: false,
+                intent: .defaultIntent
+              )
         else { return }
 
-        let drawRect = self.rect(for: gridOverlay.boundingMapRect)
+        ctx.saveGState()
+        ctx.interpolationQuality = .high
         ctx.draw(cgImage, in: drawRect)
+        ctx.restoreGState()
+    }
+
+    /// Bilineare Interpolation zwischen den vier umgebenden Rasterpunkten.
+    static func bilinearSample(
+        values: [Double?],
+        region: GridRegion,
+        lat: Double,
+        lon: Double
+    ) -> Double? {
+        guard lat >= region.latMin, lat <= region.latMax,
+              lon >= region.lonMin, lon <= region.lonMax,
+              region.lonStep > 0, region.latStep > 0 else { return nil }
+
+        let gx = (lon - region.lonMin) / region.lonStep
+        let gy = (lat - region.latMin) / region.latStep
+        let ix0 = max(0, min(region.nx - 1, Int(floor(gx))))
+        let iy0 = max(0, min(region.ny - 1, Int(floor(gy))))
+        let ix1 = min(ix0 + 1, region.nx - 1)
+        let iy1 = min(iy0 + 1, region.ny - 1)
+        let tx = gx - Double(ix0)
+        let ty = gy - Double(iy0)
+
+        func sample(_ ix: Int, _ iy: Int) -> Double? {
+            values[safe: region.index(ix: ix, iy: iy)].flatMap { $0 }
+        }
+
+        let corners: [(Double?, Double)] = [
+            (sample(ix0, iy0), (1 - tx) * (1 - ty)),
+            (sample(ix1, iy0), tx * (1 - ty)),
+            (sample(ix0, iy1), (1 - tx) * ty),
+            (sample(ix1, iy1), tx * ty),
+        ]
+        let valid = corners.compactMap { value, weight -> (Double, Double)? in
+            guard let value else { return nil }
+            return (value, weight)
+        }
+        guard !valid.isEmpty else { return nil }
+        let weightSum = valid.reduce(0.0) { $0 + $1.1 }
+        guard weightSum > 0 else { return nil }
+        return valid.reduce(0.0) { $0 + $1.0 * $1.1 } / weightSum
     }
 
     // MARK: - Farbskala (RGBA)
+
     private func rgba(value: Double?, layer: WeatherLayer) -> (UInt8, UInt8, UInt8, UInt8) {
-        guard let v = value else { return (128, 128, 128, 0) }  // transparent = fehlend
+        guard let v = value else { return (128, 128, 128, 0) }
 
         switch layer {
         case .temperature:
@@ -100,7 +171,7 @@ final class GribOverlayRenderer: MKOverlayRenderer {
         case .cloudCover:
             let t = max(0, min(1, v / 100))
             let c = UInt8(200 - Int(t * 150))
-            return (c, c, UInt8(max(0, Int(c) - 50)), 200)
+            return (c, c, UInt8(max(0, Int(c) - 50)), 210)
         case .wave:
             let t = max(0, min(1, v / 10))
             return gradient(t, stops: [
@@ -119,7 +190,7 @@ final class GribOverlayRenderer: MKOverlayRenderer {
     }
 
     private func gradient(_ t: Double,
-                           stops: [(Double, (Int, Int, Int))]) -> (UInt8, UInt8, UInt8, UInt8) {
+                          stops: [(Double, (Int, Int, Int))]) -> (UInt8, UInt8, UInt8, UInt8) {
         for i in 0..<stops.count - 1 {
             let (t0, c0) = stops[i]
             let (t1, c1) = stops[i + 1]
@@ -128,9 +199,9 @@ final class GribOverlayRenderer: MKOverlayRenderer {
             let r = UInt8(max(0, min(255, Int(Double(c0.0) + f * Double(c1.0 - c0.0)))))
             let g = UInt8(max(0, min(255, Int(Double(c0.1) + f * Double(c1.1 - c0.1)))))
             let b = UInt8(max(0, min(255, Int(Double(c0.2) + f * Double(c1.2 - c0.2)))))
-            return (r, g, b, 200)
+            return (r, g, b, 220)
         }
         let last = stops.last!.1
-        return (UInt8(last.0), UInt8(last.1), UInt8(last.2), 200)
+        return (UInt8(last.0), UInt8(last.1), UInt8(last.2), 220)
     }
 }

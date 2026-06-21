@@ -19,16 +19,19 @@ final class ClickableMKMapView: MKMapView {
 struct GribMapKitView: NSViewRepresentable {
     @Bindable var weatherVM: WeatherViewModel
     var locationVM: LocationViewModel
-    var onMapViewReady: ((MKMapView) -> Void)?
+    var zoomInTrigger: Int = 0
+    var zoomOutTrigger: Int = 0
+    @Binding var liveMapRegion: MKCoordinateRegion?
 
     func makeNSView(context: Context) -> MKMapView {
         let mv = ClickableMKMapView()
         mv.delegate = context.coordinator
         mv.showsCompass = true
         mv.showsScale = true
+        mv.isZoomEnabled = true
+        mv.isScrollEnabled = true
         mv.addOverlay(context.coordinator.overlay, level: .aboveRoads)
-        context.coordinator.syncRegion(mv.region, weatherVM: weatherVM)
-        onMapViewReady?(mv)
+        context.coordinator.publishRegion(mv.region, weatherVM: weatherVM)
         mv.onMapClick = { [weak coordinator = context.coordinator] coord in
             Task { @MainActor in
                 coordinator?.handleMapClick(at: coord)
@@ -39,6 +42,9 @@ struct GribMapKitView: NSViewRepresentable {
 
     func updateNSView(_ mv: MKMapView, context: Context) {
         let coord = context.coordinator
+        coord.liveMapRegionBinding = $liveMapRegion
+
+        coord.applyZoomIfNeeded(on: mv, zoomInTrigger: zoomInTrigger, zoomOutTrigger: zoomOutTrigger)
 
         // Ort-Pin nur bei Ortswechsel aktualisieren
         if locationVM.selectedLocation?.id != coord.displayedLocationId {
@@ -55,6 +61,7 @@ struct GribMapKitView: NSViewRepresentable {
                 let region = MKCoordinateRegion(center: loc.coordinate,
                                                 span: MKCoordinateSpan(latitudeDelta: 6, longitudeDelta: 6))
                 mv.setRegion(region, animated: true)
+                coord.publishRegion(region, weatherVM: weatherVM)
             } else {
                 coord.lastCenteredLocation = nil
             }
@@ -63,6 +70,11 @@ struct GribMapKitView: NSViewRepresentable {
         coord.updateOverlay(on: mv, weatherVM: weatherVM)
         coord.updateWindAnnotationsIfNeeded(on: mv, weatherVM: weatherVM)
         coord.updateInspectionPinIfNeeded(on: mv, weatherVM: weatherVM)
+
+        if weatherVM.currentGrid != nil,
+           let renderer = mv.renderer(for: coord.overlay) as? GribOverlayRenderer {
+            renderer.setNeedsDisplay()
+        }
     }
 
     func makeCoordinator() -> Coordinator {
@@ -87,14 +99,40 @@ struct GribMapKitView: NSViewRepresentable {
         private var overlayHour: Int = 0
         private var windStateKey: String?
         private var inspectionKey: String?
+        private var handledZoomInTrigger = 0
+        private var handledZoomOutTrigger = 0
+        var liveMapRegionBinding: Binding<MKCoordinateRegion?>?
 
         init(weatherVM: WeatherViewModel) {
             self.weatherVM = weatherVM
         }
 
-        func syncRegion(_ region: MKCoordinateRegion, weatherVM: WeatherViewModel) {
+        func publishRegion(_ region: MKCoordinateRegion, weatherVM: WeatherViewModel) {
             latestRegion = region
+            if let binding = liveMapRegionBinding,
+               binding.wrappedValue.map({ WeatherViewModel.regionsEqual($0, region) }) != true {
+                binding.wrappedValue = region
+            }
             weatherVM.setVisibleMapRegion(region)
+        }
+
+        func applyZoomIfNeeded(on mapView: MKMapView, zoomInTrigger: Int, zoomOutTrigger: Int) {
+            if handledZoomInTrigger != zoomInTrigger {
+                handledZoomInTrigger = zoomInTrigger
+                zoom(by: 2.0, on: mapView)
+            }
+            if handledZoomOutTrigger != zoomOutTrigger {
+                handledZoomOutTrigger = zoomOutTrigger
+                zoom(by: 0.5, on: mapView)
+            }
+        }
+
+        private func zoom(by factor: Double, on mapView: MKMapView) {
+            var region = mapView.region
+            region.span.latitudeDelta = max(region.span.latitudeDelta / factor, GridRegion.minimumMapSpan)
+            region.span.longitudeDelta = max(region.span.longitudeDelta / factor, GridRegion.minimumMapSpan)
+            mapView.setRegion(region, animated: true)
+            publishRegion(region, weatherVM: weatherVM)
         }
 
         func handleMapClick(at coordinate: CLLocationCoordinate2D) {
@@ -149,7 +187,7 @@ struct GribMapKitView: NSViewRepresentable {
 
         func mapView(_ mapView: MKMapView, regionDidChangeAnimated animated: Bool) {
             guard !weatherVM.isLoadingGrid, !weatherVM.isExportingGrib else { return }
-            syncRegion(mapView.region, weatherVM: weatherVM)
+            publishRegion(mapView.region, weatherVM: weatherVM)
         }
 
         func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
