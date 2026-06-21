@@ -46,10 +46,15 @@ final class WeatherViewModel {
 
     private let gridService = GridFetchService()
     private var downloadTask: Task<Void, Never>?
+    private var lastReportedProgress = 0
     private(set) var lastMapRegion: MKCoordinateRegion?
 
-    /// Sichtbaren Kartenbereich merken; veraltetes Raster entfernen wenn sich die Karte bewegt.
-    func updateVisibleMapRegion(_ mapRegion: MKCoordinateRegion) {
+    /// Sichtbaren Kartenbereich setzen (nur bei merklicher Änderung → weniger UI-Updates).
+    func setVisibleMapRegion(_ mapRegion: MKCoordinateRegion) {
+        if let last = lastMapRegion,
+           !Self.regionChangedSignificantly(mapRegion, comparedTo: last) {
+            return
+        }
         if let last = lastMapRegion,
            Self.regionChangedSignificantly(mapRegion, comparedTo: last),
            currentGrid != nil {
@@ -65,13 +70,19 @@ final class WeatherViewModel {
         let model  = selectedModel
         isLoadingGrid = true
         gridLoadError = nil
+        lastReportedProgress = 0
         gridLoadProgress = (0, region.allIndices.count)
         defer {
             isLoadingGrid = false
             gridLoadProgress = nil
         }
-        let grid = try await gridService.fetchGrid(region: region, model: model) { completed, total in
+        let grid = try await gridService.fetchGrid(region: region, model: model) { [weak self] completed, total in
             Task { @MainActor in
+                guard let self else { return }
+                guard completed == total
+                        || completed - self.lastReportedProgress >= 5
+                        || self.lastReportedProgress == 0 else { return }
+                self.lastReportedProgress = completed
                 self.gridLoadProgress = (completed, total)
             }
         }
@@ -110,6 +121,10 @@ final class WeatherViewModel {
     func cancelDownload() {
         downloadTask?.cancel()
         downloadTask = nil
+        isLoadingGrid = false
+        isExportingGrib = false
+        gridLoadProgress = nil
+        gribExportProgress = nil
     }
 
     func startDownload(for mapRegion: MKCoordinateRegion, saveTo url: URL) {

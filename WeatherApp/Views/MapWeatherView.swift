@@ -11,10 +11,13 @@ private extension UTType {
 struct MapWeatherView: View {
     @Bindable var weatherVM: WeatherViewModel
     var locationVM: LocationViewModel
+    @State private var mapView: MKMapView?
 
     var body: some View {
         ZStack(alignment: .bottom) {
-            GribMapKitView(weatherVM: weatherVM, locationVM: locationVM)
+            GribMapKitView(weatherVM: weatherVM,
+                           locationVM: locationVM,
+                           onMapViewReady: { mapView = $0 })
                 .ignoresSafeArea()
 
             HStack(alignment: .bottom, spacing: 10) {
@@ -73,17 +76,26 @@ struct MapWeatherView: View {
             if weatherVM.isLoadingGrid || weatherVM.isExportingGrib {
                 ZStack {
                     Color.black.opacity(0.2).ignoresSafeArea()
-                    if let progress = weatherVM.isLoadingGrid
-                        ? weatherVM.gridLoadProgress
-                        : weatherVM.gribExportProgress {
-                        ProgressOverlayView(
-                            title: weatherVM.isLoadingGrid ? "GRIB2 laden…" : "GRIB2 speichern…",
-                            completed: progress.completed,
-                            total: progress.total
-                        )
-                    } else {
-                        ProgressView(weatherVM.isLoadingGrid ? "GRIB2 laden…" : "GRIB2 speichern…")
+                        .allowsHitTesting(false)
+                    VStack(spacing: 12) {
+                        if let progress = weatherVM.isLoadingGrid
+                            ? weatherVM.gridLoadProgress
+                            : weatherVM.gribExportProgress {
+                            ProgressOverlayView(
+                                title: weatherVM.isLoadingGrid ? "GRIB2 laden…" : "GRIB2 speichern…",
+                                completed: progress.completed,
+                                total: progress.total
+                            )
+                        } else {
+                            ProgressView(weatherVM.isLoadingGrid ? "GRIB2 laden…" : "GRIB2 speichern…")
+                        }
+                        Button("Abbrechen") {
+                            weatherVM.cancelDownload()
+                        }
+                        .buttonStyle(.bordered)
                     }
+                    .padding()
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
                 }
             }
         }
@@ -94,7 +106,7 @@ struct MapWeatherView: View {
                 } label: {
                     Label("GRIB2 laden & speichern…", systemImage: "arrow.down.doc")
                 }
-                .disabled(weatherVM.lastMapRegion == nil
+                .disabled(mapView == nil
                           || weatherVM.isLoadingGrid
                           || weatherVM.isExportingGrib)
             }
@@ -102,7 +114,7 @@ struct MapWeatherView: View {
     }
 
     private func downloadGrib() {
-        guard let region = weatherVM.lastMapRegion else { return }
+        guard let region = mapView?.region ?? weatherVM.lastMapRegion else { return }
         let panel = NSSavePanel()
         panel.title = "GRIB2-Raster speichern"
         panel.allowedContentTypes = [.grib2]
