@@ -37,7 +37,7 @@ import MapKit
     let gridRegion = GridRegion(from: MKCoordinateRegion(center: center, span: span))
     #expect(gridRegion.nx >= 2)
     #expect(gridRegion.ny >= 2)
-    #expect(gridRegion.nx * gridRegion.ny <= 300)
+    #expect(gridRegion.nx * gridRegion.ny <= 200)
     #expect(gridRegion.latMax - gridRegion.latMin >= 0.02)
     #expect(gridRegion.lonMax - gridRegion.lonMin >= 0.02)
 }
@@ -57,7 +57,7 @@ import MapKit
     let center = CLLocationCoordinate2D(latitude: 51.0, longitude: 10.0)
     let span = MKCoordinateSpan(latitudeDelta: 6.0, longitudeDelta: 6.0)
     let gridRegion = GridRegion(from: MKCoordinateRegion(center: center, span: span))
-    #expect(gridRegion.nx * gridRegion.ny <= 300)
+    #expect(gridRegion.nx * gridRegion.ny <= 200)
     #expect(gridRegion.nx >= 2)
     #expect(gridRegion.ny >= 2)
 }

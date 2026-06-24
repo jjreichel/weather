@@ -1,117 +1,170 @@
 import SwiftUI
 import MapKit
-import AppKit
-import UniformTypeIdentifiers
-
-// UTI für GRIB2 (nur definieren wenn noch nicht vorhanden)
-private extension UTType {
-    static let grib2 = UTType(filenameExtension: "grib2") ?? .data
-}
 
 struct MapWeatherView: View {
     @Bindable var weatherVM: WeatherViewModel
     var locationVM: LocationViewModel
+    @State private var zoomInTrigger = 0
+    @State private var zoomOutTrigger = 0
+    @State private var liveMapRegion: MKCoordinateRegion?
+
+    private var isBusy: Bool {
+        weatherVM.isLoadingGrid || weatherVM.isExportingGrib
+    }
 
     var body: some View {
-        ZStack(alignment: .bottom) {
-            GribMapKitView(weatherVM: weatherVM, locationVM: locationVM)
-                .ignoresSafeArea()
+        ZStack(alignment: .topLeading) {
+            GribMapKitView(weatherVM: weatherVM,
+                           locationVM: locationVM,
+                           zoomInTrigger: zoomInTrigger,
+                           zoomOutTrigger: zoomOutTrigger,
+                           liveMapRegion: $liveMapRegion)
+            .ignoresSafeArea()
 
-            HStack(alignment: .bottom, spacing: 10) {
-                LayerLegendView(layer: weatherVM.selectedLayer,
-                                windSpeedUnit: weatherVM.windSpeedUnit)
+            // Steuerung über der MapKit-NSView (sonst werden Klicks verschluckt)
+            VStack(alignment: .leading, spacing: 6) {
+                MapZoomControls(
+                    onZoomIn: { zoomInTrigger += 1 },
+                    onZoomOut: { zoomOutTrigger += 1 }
+                )
+                Button {
+                    loadGribForMap()
+                } label: {
+                    Label("GRIB2 laden", systemImage: "cloud.fill")
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(isBusy)
 
-                Spacer()
-
-                VStack(alignment: .trailing, spacing: 8) {
-                    if let grid = weatherVM.currentGrid,
-                       let inspection = weatherVM.gridInspection {
-                        GridPointDetailView(
-                            grid: grid,
-                            inspection: inspection,
-                            hourIndex: weatherVM.selectedHourIndex,
-                            windSpeedUnit: weatherVM.windSpeedUnit
-                        ) {
-                            weatherVM.clearGridInspection()
-                        }
+                if weatherVM.currentGrid != nil {
+                    Button {
+                        GribDownloadPresenter.presentSavePanel(weatherVM: weatherVM)
+                    } label: {
+                        Label("GRIB2 speichern…", systemImage: "arrow.down.doc")
                     }
-
-                    if let grid = weatherVM.currentGrid, grid.times.count > 1 {
-                        TimeSliderView(times: grid.times,
-                                       selectedIndex: $weatherVM.selectedHourIndex)
-                            .frame(maxWidth: 360)
-                            .padding(.horizontal)
-                            .padding(.vertical, 8)
-                            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
-                    }
+                    .buttonStyle(.bordered)
+                    .disabled(isBusy)
                 }
             }
             .padding(10)
-        }
-        .overlay(alignment: .topTrailing) {
-            VStack(alignment: .trailing, spacing: 8) {
-                LayerPickerView(selectedLayer: $weatherVM.selectedLayer)
-                    .disabled(weatherVM.currentGrid == nil)
-                if weatherVM.currentGrid == nil && !weatherVM.isLoadingGrid {
-                    Text("Karte positionieren, dann GRIB2 laden")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.trailing)
-                        .frame(maxWidth: 160)
-                }
-                if let err = weatherVM.gridLoadError {
-                    Text(err)
-                        .font(.caption2)
-                        .foregroundStyle(.red)
-                        .multilineTextAlignment(.trailing)
-                        .frame(maxWidth: 200)
-                }
-            }
-            .padding()
-        }
-        .overlay {
-            if weatherVM.isLoadingGrid || weatherVM.isExportingGrib {
-                ZStack {
-                    Color.black.opacity(0.2).ignoresSafeArea()
-                    if let progress = weatherVM.isLoadingGrid
-                        ? weatherVM.gridLoadProgress
-                        : weatherVM.gribExportProgress {
-                        ProgressOverlayView(
-                            title: weatherVM.isLoadingGrid ? "GRIB2 laden…" : "GRIB2 speichern…",
-                            completed: progress.completed,
-                            total: progress.total
-                        )
-                    } else {
-                        ProgressView(weatherVM.isLoadingGrid ? "GRIB2 laden…" : "GRIB2 speichern…")
+            .background(.clear)
+            .allowsHitTesting(true)
+
+            VStack {
+                Spacer()
+                HStack(alignment: .bottom, spacing: 10) {
+                    LayerLegendView(layer: weatherVM.selectedLayer,
+                                    windSpeedUnit: weatherVM.windSpeedUnit)
+                    Spacer()
+                    VStack(alignment: .trailing, spacing: 8) {
+                        if let grid = weatherVM.currentGrid,
+                           let inspection = weatherVM.gridInspection {
+                            GridPointDetailView(
+                                grid: grid,
+                                inspection: inspection,
+                                hourIndex: weatherVM.selectedHourIndex,
+                                windSpeedUnit: weatherVM.windSpeedUnit
+                            ) {
+                                weatherVM.clearGridInspection()
+                            }
+                        }
+                        if let grid = weatherVM.currentGrid, grid.times.count > 1 {
+                            TimeSliderView(times: grid.times,
+                                           selectedIndex: $weatherVM.selectedHourIndex)
+                                .frame(maxWidth: 360)
+                                .padding(.horizontal)
+                                .padding(.vertical, 8)
+                                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+                        }
                     }
                 }
+                .padding(10)
             }
-        }
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button {
-                    downloadGrib()
-                } label: {
-                    Label("GRIB2 laden & speichern…", systemImage: "arrow.down.doc")
+            .allowsHitTesting(true)
+
+            VStack {
+                HStack {
+                    Spacer()
+                    VStack(alignment: .trailing, spacing: 8) {
+                        LayerPickerView(selectedLayer: $weatherVM.selectedLayer)
+                            .disabled(weatherVM.currentGrid == nil)
+                        if weatherVM.currentGrid == nil && !weatherVM.isLoadingGrid {
+                            Text("„GRIB2 laden“ klicken")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                        if let err = weatherVM.gridLoadError {
+                            Text(err)
+                                .font(.caption2)
+                                .foregroundStyle(.red)
+                                .multilineTextAlignment(.trailing)
+                                .frame(maxWidth: 240)
+                        }
+                    }
+                    .padding()
                 }
-                .disabled(weatherVM.lastMapRegion == nil
-                          || weatherVM.isLoadingGrid
-                          || weatherVM.isExportingGrib)
+                Spacer()
+            }
+            .allowsHitTesting(true)
+        }
+        .overlay {
+            if isBusy {
+                ZStack {
+                    Color.black.opacity(0.2).ignoresSafeArea()
+                        .allowsHitTesting(false)
+                    VStack(spacing: 12) {
+                        if let progress = weatherVM.isLoadingGrid
+                            ? weatherVM.gridLoadProgress
+                            : weatherVM.gribExportProgress {
+                            ProgressOverlayView(
+                                title: weatherVM.isLoadingGrid ? "GRIB2 laden…" : "GRIB2 speichern…",
+                                completed: progress.completed,
+                                total: progress.total
+                            )
+                        } else {
+                            ProgressView(weatherVM.isLoadingGrid ? "GRIB2 laden…" : "GRIB2 speichern…")
+                        }
+                        Button("Abbrechen") {
+                            weatherVM.cancelDownload()
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                    .padding()
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+                }
             }
         }
     }
 
-    private func downloadGrib() {
-        guard let region = weatherVM.lastMapRegion else { return }
-        let panel = NSSavePanel()
-        panel.title = "GRIB2-Raster speichern"
-        panel.allowedContentTypes = [.grib2]
-        panel.nameFieldStringValue = "Wettermodell-\(weatherVM.selectedModel.displayName).grib2"
-        panel.begin { response in
-            guard response == .OK, let url = panel.url else { return }
-            weatherVM.gridLoadError = nil
-            weatherVM.startDownload(for: region, saveTo: url)
+    private func loadGribForMap() {
+        let region = liveMapRegion
+            ?? weatherVM.downloadRegion(fallback: locationVM.selectedLocation)
+        weatherVM.startGridLoad(for: region)
+    }
+}
+
+// MARK: - MapZoomControls
+
+struct MapZoomControls: View {
+    var onZoomIn: () -> Void
+    var onZoomOut: () -> Void
+
+    var body: some View {
+        VStack(spacing: 4) {
+            Button(action: onZoomIn) {
+                Image(systemName: "plus")
+                    .frame(width: 28, height: 28)
+            }
+            .help("Hineinzoomen")
+            Button(action: onZoomOut) {
+                Image(systemName: "minus")
+                    .frame(width: 28, height: 28)
+            }
+            .help("Herauszoomen")
         }
+        .buttonStyle(.bordered)
+        .controlSize(.large)
+        .padding(4)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
     }
 }
 

@@ -19,16 +19,19 @@ final class ClickableMKMapView: MKMapView {
 struct GribMapKitView: NSViewRepresentable {
     @Bindable var weatherVM: WeatherViewModel
     var locationVM: LocationViewModel
+    var zoomInTrigger: Int = 0
+    var zoomOutTrigger: Int = 0
+    @Binding var liveMapRegion: MKCoordinateRegion?
 
     func makeNSView(context: Context) -> MKMapView {
         let mv = ClickableMKMapView()
         mv.delegate = context.coordinator
         mv.showsCompass = true
         mv.showsScale = true
+        mv.isZoomEnabled = true
+        mv.isScrollEnabled = true
         mv.addOverlay(context.coordinator.overlay, level: .aboveRoads)
-        Task { @MainActor in
-            weatherVM.updateVisibleMapRegion(mv.region)
-        }
+        context.coordinator.publishRegion(mv.region, weatherVM: weatherVM)
         mv.onMapClick = { [weak coordinator = context.coordinator] coord in
             Task { @MainActor in
                 coordinator?.handleMapClick(at: coord)
@@ -39,71 +42,137 @@ struct GribMapKitView: NSViewRepresentable {
 
     func updateNSView(_ mv: MKMapView, context: Context) {
         let coord = context.coordinator
+        coord.liveMapRegionBinding = $liveMapRegion
 
-        // Ort-Annotation separat verwalten (nicht windAnnotations berühren)
-        if let old = coord.locationPin { mv.removeAnnotation(old) }
-        if let loc = locationVM.selectedLocation {
-            let pin = MKPointAnnotation()
-            pin.coordinate = loc.coordinate
-            pin.title = loc.name
-            mv.addAnnotation(pin)
-            coord.locationPin = pin
-            if coord.lastCenteredLocation?.id != loc.id {
+        coord.applyZoomIfNeeded(on: mv, zoomInTrigger: zoomInTrigger, zoomOutTrigger: zoomOutTrigger)
+
+        // Ort-Pin nur bei Ortswechsel aktualisieren
+        if locationVM.selectedLocation?.id != coord.displayedLocationId {
+            if let old = coord.locationPin { mv.removeAnnotation(old) }
+            coord.locationPin = nil
+            coord.displayedLocationId = locationVM.selectedLocation?.id
+            if let loc = locationVM.selectedLocation {
+                let pin = MKPointAnnotation()
+                pin.coordinate = loc.coordinate
+                pin.title = loc.name
+                mv.addAnnotation(pin)
+                coord.locationPin = pin
                 coord.lastCenteredLocation = loc
                 let region = MKCoordinateRegion(center: loc.coordinate,
                                                 span: MKCoordinateSpan(latitudeDelta: 6, longitudeDelta: 6))
                 mv.setRegion(region, animated: true)
+                coord.publishRegion(region, weatherVM: weatherVM)
+            } else {
+                coord.lastCenteredLocation = nil
             }
-        } else {
-            coord.locationPin = nil
         }
 
-        // Overlay-Properties aktualisieren
-        let overlay = coord.overlay
-        let previousBounds = overlay.boundingMapRect
-        overlay.grid              = weatherVM.currentGrid
-        overlay.selectedLayer     = weatherVM.selectedLayer
-        overlay.selectedHourIndex = weatherVM.selectedHourIndex
+        coord.updateOverlay(on: mv, weatherVM: weatherVM)
+        coord.updateWindAnnotationsIfNeeded(on: mv, weatherVM: weatherVM)
+        coord.updateInspectionPinIfNeeded(on: mv, weatherVM: weatherVM)
 
-        if !MKMapRectEqualToRect(overlay.boundingMapRect, previousBounds) {
-            mv.removeOverlay(overlay)
-            mv.addOverlay(overlay, level: .aboveRoads)
-        } else if let renderer = mv.renderer(for: overlay) as? GribOverlayRenderer {
+        if weatherVM.currentGrid != nil,
+           let renderer = mv.renderer(for: coord.overlay) as? GribOverlayRenderer {
             renderer.setNeedsDisplay()
         }
-
-        // Wind-Pfeile aktualisieren
-        coord.updateWindAnnotations(on: mv, weatherVM: weatherVM)
-
-        // Inspektions-Pin aktualisieren
-        coord.updateInspectionPin(on: mv, weatherVM: weatherVM)
     }
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(weatherVM: weatherVM, locationVM: locationVM)
+        Coordinator(weatherVM: weatherVM)
     }
 
     // MARK: - Coordinator
 
     final class Coordinator: NSObject, MKMapViewDelegate {
         let weatherVM: WeatherViewModel
-        let locationVM: LocationViewModel
         let overlay = GribMapOverlay()
         var lastCenteredLocation: Location?
+        var displayedLocationId: UUID?
+        private(set) var latestRegion: MKCoordinateRegion?
         private var windAnnotations: [MKAnnotation] = []
         var locationPin: MKPointAnnotation?
         var inspectionPin: MKPointAnnotation?
 
-        init(weatherVM: WeatherViewModel, locationVM: LocationViewModel) {
+        // Zustand für inkrementelle Updates (updateNSView nicht bei jedem Progress-Tick)
+        private var overlayGridKey: String = ""
+        private var overlayLayer: WeatherLayer = .temperature
+        private var overlayHour: Int = 0
+        private var windStateKey: String?
+        private var inspectionKey: String?
+        private var handledZoomInTrigger = 0
+        private var handledZoomOutTrigger = 0
+        var liveMapRegionBinding: Binding<MKCoordinateRegion?>?
+
+        init(weatherVM: WeatherViewModel) {
             self.weatherVM = weatherVM
-            self.locationVM = locationVM
+        }
+
+        func publishRegion(_ region: MKCoordinateRegion, weatherVM: WeatherViewModel) {
+            latestRegion = region
+            if let binding = liveMapRegionBinding,
+               binding.wrappedValue.map({ WeatherViewModel.regionsEqual($0, region) }) != true {
+                binding.wrappedValue = region
+            }
+            weatherVM.setVisibleMapRegion(region)
+        }
+
+        func applyZoomIfNeeded(on mapView: MKMapView, zoomInTrigger: Int, zoomOutTrigger: Int) {
+            if handledZoomInTrigger != zoomInTrigger {
+                handledZoomInTrigger = zoomInTrigger
+                zoom(by: 2.0, on: mapView)
+            }
+            if handledZoomOutTrigger != zoomOutTrigger {
+                handledZoomOutTrigger = zoomOutTrigger
+                zoom(by: 0.5, on: mapView)
+            }
+        }
+
+        private func zoom(by factor: Double, on mapView: MKMapView) {
+            var region = mapView.region
+            region.span.latitudeDelta = max(region.span.latitudeDelta / factor, GridRegion.minimumMapSpan)
+            region.span.longitudeDelta = max(region.span.longitudeDelta / factor, GridRegion.minimumMapSpan)
+            mapView.setRegion(region, animated: true)
+            publishRegion(region, weatherVM: weatherVM)
         }
 
         func handleMapClick(at coordinate: CLLocationCoordinate2D) {
             weatherVM.inspectGrid(at: coordinate)
         }
 
-        func updateInspectionPin(on mapView: MKMapView, weatherVM: WeatherViewModel) {
+        func updateOverlay(on mapView: MKMapView, weatherVM: WeatherViewModel) {
+            let gridKey = weatherVM.currentGrid.map { grid in
+                "\(grid.model.rawValue)-\(grid.region.nx)x\(grid.region.ny)-\(grid.times.count)"
+            } ?? "none"
+            let layer = weatherVM.selectedLayer
+            let hour = weatherVM.selectedHourIndex
+            guard gridKey != overlayGridKey
+                    || layer != overlayLayer
+                    || hour != overlayHour else { return }
+
+            overlayGridKey = gridKey
+            overlayLayer = layer
+            overlayHour = hour
+
+            let previousBounds = overlay.boundingMapRect
+            overlay.grid = weatherVM.currentGrid
+            overlay.selectedLayer = layer
+            overlay.selectedHourIndex = hour
+
+            if !MKMapRectEqualToRect(overlay.boundingMapRect, previousBounds) {
+                mapView.removeOverlay(overlay)
+                mapView.addOverlay(overlay, level: .aboveRoads)
+            } else if let renderer = mapView.renderer(for: overlay) as? GribOverlayRenderer {
+                renderer.setNeedsDisplay()
+            }
+        }
+
+        func updateInspectionPinIfNeeded(on mapView: MKMapView, weatherVM: WeatherViewModel) {
+            let key = weatherVM.gridInspection.map {
+                "\($0.latitude),\($0.longitude)"
+            } ?? ""
+            guard key != inspectionKey else { return }
+            inspectionKey = key
+
             if let old = inspectionPin {
                 mapView.removeAnnotation(old)
                 inspectionPin = nil
@@ -118,12 +187,12 @@ struct GribMapKitView: NSViewRepresentable {
 
         func mapView(_ mapView: MKMapView, regionDidChangeAnimated animated: Bool) {
             guard !weatherVM.isLoadingGrid, !weatherVM.isExportingGrib else { return }
-            weatherVM.updateVisibleMapRegion(mapView.region)
+            publishRegion(mapView.region, weatherVM: weatherVM)
         }
 
         func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
-            if let go = overlay as? GribMapOverlay {
-                return GribOverlayRenderer(overlay: go)
+            if overlay === self.overlay {
+                return GribOverlayRenderer(overlay: self.overlay)
             }
             return MKOverlayRenderer(overlay: overlay)
         }
@@ -131,8 +200,11 @@ struct GribMapKitView: NSViewRepresentable {
         func mapView(_ mapView: MKMapView, viewFor annotation: MKAnnotation) -> MKAnnotationView? {
             if annotation is MKUserLocation { return nil }
             if let wind = annotation as? WindArrowAnnotation {
-                let v = MKAnnotationView(annotation: wind, reuseIdentifier: "wind")
-                v.image = wind.arrowImage
+                let id = "wind-\(wind.imageKey)"
+                let v = mapView.dequeueReusableAnnotationView(withIdentifier: id)
+                    ?? MKAnnotationView(annotation: wind, reuseIdentifier: id)
+                v.annotation = wind
+                v.image = wind.cachedImage
                 return v
             }
             if annotation === inspectionPin {
@@ -146,7 +218,17 @@ struct GribMapKitView: NSViewRepresentable {
             return view
         }
 
-        func updateWindAnnotations(on mapView: MKMapView, weatherVM: WeatherViewModel) {
+        func updateWindAnnotationsIfNeeded(on mapView: MKMapView, weatherVM: WeatherViewModel) {
+            let key: String
+            if weatherVM.selectedLayer == .wind,
+               let grid = weatherVM.currentGrid {
+                key = "\(grid.model.rawValue)-\(grid.region.nx)x\(grid.region.ny)-\(weatherVM.selectedHourIndex)"
+            } else {
+                key = "none"
+            }
+            guard key != windStateKey else { return }
+            windStateKey = key
+
             let existing = windAnnotations
             guard weatherVM.selectedLayer == .wind,
                   let grid = weatherVM.currentGrid,
@@ -168,12 +250,14 @@ struct GribMapKitView: NSViewRepresentable {
                     let pidx = grid.region.index(ix: ix, iy: iy)
                     guard let speed = speedData[safe: pidx].flatMap({ $0 }),
                           let dir   = dirData[safe: pidx].flatMap({ $0 }) else { continue }
-                    let coordinate = CLLocationCoordinate2D(
-                        latitude:  grid.region.latitude(iy: iy),
-                        longitude: grid.region.longitude(ix: ix)
-                    )
-                    newAnnotations.append(WindArrowAnnotation(coordinate: coordinate,
-                                                              speed: speed, direction: dir))
+                    newAnnotations.append(WindArrowAnnotation(
+                        coordinate: CLLocationCoordinate2D(
+                            latitude:  grid.region.latitude(iy: iy),
+                            longitude: grid.region.longitude(ix: ix)
+                        ),
+                        speed: speed,
+                        direction: dir
+                    ))
                 }
             }
 
@@ -189,22 +273,27 @@ struct GribMapKitView: NSViewRepresentable {
 final class WindArrowAnnotation: NSObject, MKAnnotation {
     let coordinate: CLLocationCoordinate2D
     let speed: Double
-    let direction: Double  // Meteorologisch (0=N, 90=O, 180=S, 270=W)
+    let direction: Double
+    let cachedImage: NSImage
+    let imageKey: String
 
     init(coordinate: CLLocationCoordinate2D, speed: Double, direction: Double) {
         self.coordinate = coordinate
         self.speed = speed
         self.direction = direction
+        let speedBucket = Int(speed.rounded())
+        let dirBucket = Int(direction.rounded())
+        self.imageKey = "\(speedBucket)-\(dirBucket)"
+        self.cachedImage = Self.renderArrow(speed: speed, direction: direction)
     }
 
-    var arrowImage: NSImage {
+    private static func renderArrow(speed: Double, direction: Double) -> NSImage {
         let size = CGSize(width: 20, height: 20)
         return NSImage(size: size, flipped: false) { rect in
             let ctx = NSGraphicsContext.current!.cgContext
             ctx.translateBy(x: rect.midX, y: rect.midY)
-            // Meteorologische Richtung = Herkunft; Pfeil zeigt Flugrichtung (+180°)
-            ctx.rotate(by: CGFloat(self.direction + 180) * .pi / 180)
-            let length = CGFloat(min(1.0, self.speed / 60)) * 8 + 4
+            ctx.rotate(by: CGFloat(direction + 180) * .pi / 180)
+            let length = CGFloat(min(1.0, speed / 60)) * 8 + 4
             ctx.setStrokeColor(NSColor.white.cgColor)
             ctx.setLineWidth(1.5)
             ctx.move(to: CGPoint(x: 0, y: -length))

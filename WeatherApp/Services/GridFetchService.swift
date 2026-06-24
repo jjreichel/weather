@@ -56,12 +56,13 @@ actor GridFetchService {
     private let forecastBase = URL(string: "https://api.open-meteo.com/v1/forecast")!
     private let marineBase   = URL(string: "https://marine-api.open-meteo.com/v1/marine")!
     private let session: URLSession
-    private let batchSize = 20
+    private let batchSize = 8
 
     init(session: URLSession = {
         let c = URLSessionConfiguration.default
-        c.timeoutIntervalForRequest = 30
-        c.waitsForConnectivity = true
+        c.timeoutIntervalForRequest = 20
+        c.timeoutIntervalForResource = 60
+        c.waitsForConnectivity = false
         return URLSession(configuration: c)
     }()) { self.session = session }
 
@@ -91,8 +92,7 @@ actor GridFetchService {
                         let lon = region.longitude(ix: ix)
                         let idx = region.index(ix: ix, iy: iy)
                         let forecast = try? await self.fetchForecast(lat: lat, lon: lon, model: model)
-                        let marine   = try? await self.fetchMarine(lat: lat, lon: lon)
-                        return (idx, forecast, marine)
+                        return (idx, forecast, nil as MarineGridResponse?)
                     }
                 }
                 var batchOut: [PointResult] = []
@@ -105,9 +105,12 @@ actor GridFetchService {
             onProgress(completed, nTotal)
         }
 
+        let successCount = results.filter { $0.forecast != nil }.count
         let times = results.compactMap { $0.forecast?.times }.first ?? []
         guard !times.isEmpty else {
-            throw WeatherError.networkError("Keine Wetterdaten für dieses Kartenfenster erhalten.")
+            throw WeatherError.networkError(
+                "Keine Wetterdaten erhalten (\(successCount)/\(nTotal) Punkte). Netzwerk oder Modell prüfen."
+            )
         }
         let nHours = times.count
 
@@ -165,9 +168,14 @@ actor GridFetchService {
         for attempt in 0..<3 {
             do {
                 let (data, response) = try await session.data(from: c.url!)
-                if let http = response as? HTTPURLResponse, http.statusCode == 429 {
-                    try await Task.sleep(for: .seconds(Double(attempt + 1) * 2))
-                    continue
+                if let http = response as? HTTPURLResponse {
+                    if http.statusCode == 429 {
+                        try await Task.sleep(for: .seconds(Double(attempt + 1) * 2))
+                        continue
+                    }
+                    guard (200...299).contains(http.statusCode) else {
+                        throw WeatherError.serverError(http.statusCode)
+                    }
                 }
                 return try JSONDecoder().decode(ForecastGridResponse.self, from: data)
             } catch is CancellationError {
